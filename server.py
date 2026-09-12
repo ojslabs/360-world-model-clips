@@ -38,6 +38,7 @@ GENERATION_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 INTERACTIVE_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 SEARCH_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 LABEL_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+REMIX_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 JOBS = {}
 SEARCH_CACHE_SECONDS = 600
 
@@ -215,6 +216,14 @@ def get_job(job_id):
         if not job:
             return None
         job = job.copy()
+        if job.get("video_id") and job.get("remix_id"):
+            project = load_project(job["video_id"])
+            remix = next((r for r in project.get("remixes", []) if r["id"] == job["remix_id"]), None)
+            if remix and remix.get("status") == "complete":
+                original = job.copy()
+                job.update(status="complete", result=remix, finished_at=remix.get("finished_at"))
+                job.pop("error", None)
+                return save_job(job) if job != original else job
         if job.get("video_id") and job.get("run_id"):
             run = run_status(job["video_id"], job["run_id"])
             if run["delivery_ready"]:
@@ -247,6 +256,16 @@ def reconcile_jobs():
         for path in (DATA / "sources").glob("*/project.json"):
             project = media.read_json(path)
             video_id = path.parent.name
+            for remix in project.get("remixes", []):
+                saved = media.read_json(path.parent / "exports" / remix["id"] / "remix.json", {})
+                if saved.get("id") == remix["id"] and saved.get("status") == "complete":
+                    remix.update(saved)
+                    remix.pop("error", None)
+                elif remix.get("status") in {"queued", "running"}:
+                    remix.update(status="interrupted", stage="interrupted",
+                                 message="Server restarted. Start a new Reactor remix to try again.",
+                                 error="The previous Reactor session was not automatically repeated.")
+                    media.write_json(path.parent / "exports" / remix["id"] / "remix.json", remix)
             for run in project.get("generations", []):
                 location = path.parent / "exports" / run["id"]
                 recorded = media.read_json(location / "run.json", {})
@@ -1066,6 +1085,150 @@ def combine_highlights(video_id, items):
     return result
 
 
+def remix_source(video_id, composite_id):
+    """Resolve only a completed, locally owned highlight as the Reactor input."""
+    video_id = media.youtube_id(video_id)
+    if not isinstance(composite_id, str):
+        raise ValueError("Choose a finished clip for Reactor.")
+    project = load_project(video_id)
+    selected = next(((c, r["id"]) for r in project.get("generations", [])
+                   if r.get("provider") == "Fal" and r.get("status") == "complete"
+                   for c in r.get("composites", []) if c.get("id") == composite_id), None)
+    if not selected:
+        raise ValueError("Generate and finish the original clip before using Reactor.")
+    chosen, owner = selected
+    run_id = chosen.get("run_id", "")
+    if (not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", run_id)
+            or run_id != owner):
+        raise ValueError("Invalid finished clip location.")
+    parsed = urlparse(chosen.get("url", ""))
+    prefix = f"/media/{video_id}/exports/{run_id}/"
+    filename = parsed.path.removeprefix(prefix)
+    if (parsed.scheme or parsed.netloc or parsed.query or parsed.fragment
+            or not parsed.path.startswith(prefix) or Path(filename).name != filename
+            or not filename.endswith(".mp4")):
+        raise ValueError("Invalid finished clip location.")
+    directory = folder(video_id) / "exports" / run_id
+    source = directory / filename
+    if (not source.is_file() or source.is_symlink() or directory.is_symlink()
+            or (folder(video_id) / "exports").is_symlink()
+            or not source.resolve().is_relative_to((folder(video_id) / "exports").resolve())):
+        raise ValueError("The finished clip is missing or outside this project.")
+    return source, chosen
+
+
+def save_remix(video_id, remix_id, **changes):
+    with LOCK:
+        project = load_project(video_id)
+        result = next(r for r in project.get("remixes", []) if r["id"] == remix_id)
+        result.update(changes)
+        media.write_json(folder(video_id) / "exports" / remix_id / "remix.json", result)
+        media.write_json(manifest(video_id), project)
+        return result.copy()
+
+
+def start_remix(video_id, composite_id, preset_id="day-to-night", prompt=None):
+    import remix_catalog
+    video_id = media.youtube_id(video_id)
+    chosen_preset = remix_catalog.selection(preset_id, prompt)
+    source, chosen = remix_source(video_id, composite_id)
+    identity = hashlib.sha256()
+    with source.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            identity.update(chunk)
+    source_hash = identity.hexdigest()
+    cache_key = hashlib.sha256(json.dumps([source_hash, composite_id, remix_catalog.MODEL,
+                                          chosen_preset["prompt"]]).encode()).hexdigest()
+    with LOCK:
+        project = load_project(video_id)
+        existing = next((r for r in project.get("remixes", []) if r.get("cache_key") == cache_key
+                         and (r.get("status") in {"queued", "running"}
+                              or r.get("status") == "complete" and
+                              (folder(video_id) / "exports" / r["id"] / "reactor-remix.mp4").is_file())), None)
+        if existing:
+            return {"job_id": existing["job_id"], "remix_id": existing["id"], "cached": True}
+        if not remix_catalog.public_catalog()["configured"]:
+            raise ValueError("Add the Reactor API key to the server before generating a remix.")
+        remix_id, job_id = "remix-" + uuid.uuid4().hex[:12], uuid.uuid4().hex[:12]
+        entry = {"id": remix_id, "job_id": job_id, "video_id": video_id,
+                 "composite_id": composite_id, "source_run_id": chosen["run_id"],
+                 "source_sha256": source_hash, "source_url": chosen["url"],
+                 "cache_key": cache_key, "provider": "Reactor", "model": remix_catalog.MODEL,
+                 "preset_id": chosen_preset["id"], "label": chosen_preset["label"],
+                 "prompt": chosen_preset["prompt"], "status": "queued", "stage": "queued",
+                 "message": "Waiting for Reactor", "created_at": time.time()}
+        project.setdefault("remixes", []).insert(0, entry)
+        media.write_json(folder(video_id) / "exports" / remix_id / "remix.json", entry)
+        media.write_json(manifest(video_id), project)
+        result = task("Reactor: " + chosen_preset["label"], lambda: remix_video(video_id, remix_id),
+                      job_id=job_id, video_id=video_id, executor=REMIX_POOL,
+                      metadata={"operation": "remix", "remix_id": remix_id})
+        return {**result, "remix_id": remix_id}
+
+
+def remix_video(video_id, remix_id):
+    import reactor_remix
+    entry = save_remix(video_id, remix_id, status="running", stage="connecting", started_at=time.time())
+    started = time.monotonic()
+
+    def progress(value):
+        details = {**value, "elapsed_seconds": round(time.monotonic() - started, 2)}
+        details["message"] = {
+            "authenticating": "Connecting your Reactor account", "connecting": "Starting Reactor",
+            "preparing_stream": "Preparing the finished clip", "remixing": "Reactor is editing your clip",
+            "saving_remix": "Saving the Reactor video", "restoring_audio": "Restoring the original audio",
+            "complete": "Reactor remix ready",
+        }.get(details.get("stage"), "Working with Reactor")
+        save_remix(video_id, remix_id, **details)
+        job_progress(entry["job_id"], details)
+
+    try:
+        source, _ = remix_source(video_id, entry["composite_id"])
+        digest = hashlib.sha256()
+        with source.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != entry["source_sha256"]:
+            raise ValueError("The original clip changed. Choose it again before remixing.")
+        output = folder(video_id) / "exports" / remix_id / "reactor-remix.mp4"
+        try:
+            receipt = reactor_remix.generate(source, output, entry["prompt"], on_progress=progress)
+        except reactor_remix.RemixError:
+            raise
+        except Exception:
+            raise RuntimeError("Reactor could not finish this remix.") from None
+        if not output.is_file():
+            raise ValueError("Reactor did not produce a finished video.")
+        # The adapter verifies decoded video and original audio before returning.
+        result = save_remix(video_id, remix_id, status="complete", stage="complete", percent=100,
+                            message="Reactor remix ready", finished_at=time.time(),
+                            elapsed_seconds=round(time.monotonic() - started, 2),
+                            url=f"/media/{video_id}/exports/{remix_id}/{output.name}",
+                            media=receipt.get("media", {}),
+                            audio_preserved=receipt.get("original_audio_preserved", receipt.get("audio_preserved", False)),
+                            timeline_preservation_verified=receipt.get("timeline_preservation_verified", False))
+        return result
+    except Exception as error:
+        # Keep provider internals and credentials out of persistent state and browsers.
+        message = (str(error) if isinstance(error, (ValueError, reactor_remix.RemixError)) else
+                   "Reactor could not finish this remix. The original clip is still available.")
+        save_remix(video_id, remix_id, status="failed", stage="failed", error=message,
+                   message=message, finished_at=time.time())
+        raise ValueError(message) from None
+
+
+def start_remix_batch(video_id, composite_ids, preset_id="day-to-night", prompt=None):
+    import remix_catalog
+    if (not isinstance(composite_ids, list) or not 1 <= len(composite_ids) <= 40
+            or any(not isinstance(item, str) for item in composite_ids)
+            or len(set(composite_ids)) != len(composite_ids)):
+        raise ValueError("Choose 1 to 40 different finished clips.")
+    remix_catalog.selection(preset_id, prompt)
+    for item in composite_ids:
+        remix_source(video_id, item)
+    return {"jobs": [start_remix(video_id, item, preset_id, prompt) for item in composite_ids]}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
@@ -1152,6 +1315,9 @@ class Handler(BaseHTTPRequestHandler):
                                 "action_labeling": {"ready": generation_status().get("configured", False)}})
             elif path == "/api/activity":
                 self.send_json({"jobs": compact_jobs(), "server_time": time.time()})
+            elif path == "/api/remix-presets":
+                import remix_catalog
+                self.send_json(remix_catalog.public_catalog())
             elif path.startswith("/api/jobs/"):
                 job = get_job(path.rsplit("/", 1)[1])
                 self.send_json(job if job else {"error": "Unknown job"}, 200 if job else 404)
@@ -1175,7 +1341,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/assets/"):
                 assets = (ROOT / "ui" / "assets").resolve()
                 target = (assets / path.removeprefix("/assets/")).resolve()
-                if not target.is_relative_to(assets) or target.suffix not in {".woff", ".woff2", ".png", ".svg"}:
+                if not target.is_relative_to(assets) or (target.suffix not in {".woff", ".woff2", ".png", ".svg", ".js"}
+                        and target.name != "reactor-live-3.0.2.wasm"):
                     self.send_error(404)
                     return
                 self.serve_file(target, head)
@@ -1225,8 +1392,17 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/assemble":
                 result = start_assembly(data["video_id"], data["run_id"],
                                         data.get("tail_seconds", media.DEFAULTS["tail_seconds"]))
+            elif path == "/api/remix":
+                options = {"preset_id": data.get("preset_id", "day-to-night"), "prompt": data.get("prompt")}
+                if "composite_ids" in data:
+                    result = start_remix_batch(data["video_id"], data["composite_ids"], **options)
+                else:
+                    result = start_remix(data["video_id"], data["composite_id"], **options)
             elif path == "/api/combine":
                 result = task("Combine highlights", lambda: combine_highlights(data["video_id"], data.get("outputs")))
+            elif path == "/api/reactor/live-token":
+                import reactor_live
+                result = reactor_live.token()
             else:
                 self.send_error(404)
                 return
@@ -1293,6 +1469,7 @@ def main():
         INTERACTIVE_POOL.shutdown(wait=True)
         SEARCH_POOL.shutdown(wait=True)
         LABEL_POOL.shutdown(wait=True)
+        REMIX_POOL.shutdown(wait=True)
         ownership.close()
 
 

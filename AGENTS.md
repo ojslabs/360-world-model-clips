@@ -24,11 +24,23 @@ fonts and preserve the content-derived build fingerprint.
   provenance and must not silently replace a failed extraction with silence.
 - Generation, visual labels and import are separate operations. Recovery reads
   acknowledged requests and saved media; it never repeats an ambiguous paid POST.
+- Reactor X2 remixes are an optional operation on completed highlights, using the
+  server-only `REACTOR_API_KEY`. `remix_catalog.py` owns model and preset prompts.
+  Preserve original composites and audio, confine inputs to the owning completed
+  run, and deduplicate by source bytes, prompt and model. Keep separate remix IDs
+  and durable job records; recovery must repair both without repeating a session.
+  X2 output is native model resolution; do not claim source-frame alignment from
+  matching duration or advertise it as 4K preservation.
 - Shared-host authentication, same-origin checks, private keys and persistent
   storage belong to the server boundary. Do not expose an unlocked shared instance.
 - Run `python -m unittest discover -v -p 'test_*.py'`,
-  `node --test test_ui_recovery.js`, `python doctor.py --model`, and
+  `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js`, `python doctor.py --model`, and
   `python build_ui.py`. Inspect decoded media for picture/audio changes.
 
 Keep docs limited to built behavior. Record material limits and test results
 plainly. Do not add provider credentials or private user history to examples.
+
+Live preview uses one browser-owned session with server-scoped credentials. Keep
+readiness polling separate from paid creation. Stop calls disconnect(false), and
+the server session cap remains five minutes. Original source audio is optional
+and is not synchronized to the delayed live output.

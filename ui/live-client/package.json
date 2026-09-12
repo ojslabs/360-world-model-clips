@@ -1,0 +1,16 @@
+{
+  "name": "world-model-clips-live-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test_controller.mjs"
+  },
+  "dependencies": {
+    "@reactor-models/x2": "1.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

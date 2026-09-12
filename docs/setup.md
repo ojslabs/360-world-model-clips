@@ -52,6 +52,36 @@ server. The code includes no credits, sample recordings or existing outputs.
 2. Scrub the full video and click **Use this frame** on the desired moment.
 3. Generate the orbit, review the completed edit, and download it.
 
+### Optional Reactor remixes
+
+Add `REACTOR_API_KEY` to the server environment or private `.env.local` file to
+enable Reactor X2 edits of finished highlights. Shared Docker deployments can
+include it in the private `.env` file. It is separate from `FAL_KEY`; neither key
+belongs in the browser, repository or image build arguments.
+
+Step 4 offers a live preview. Choose one finished clip, click **Start live preview**,
+then switch **Day** and **Night** while Reactor streams its edited video back.
+The same session receives each new prompt. **Stop** terminates the session; a
+five-minute server limit caps interrupted sessions. Source audio is muted by
+default and can be enabled separately; it is not synchronized to the delayed
+Reactor picture. The original finished clips are unchanged.
+
+Browser SDK assets are bundled locally. Their source, pinned versions and rebuild
+instructions are documented in [Live video client](../ui/live-client/README.md).
+
+Under **Saved remixes**, choose a completed highlight and an effect such as day-to-night, jelly world,
+claymation or neon, then review or edit its prompt before starting the remix.
+Reactor writes a separate result and retains the original clip and its audio.
+Repeat requests for the same unchanged clip and prompt reuse the active or
+completed result. Failed or interrupted sessions are not automatically repeated.
+
+X2 works at its native output resolution, not the original 4K resolution. Its
+generated action and camera framing can change; preserving output duration does
+not prove exact alignment with the source frames. Inspect each result before use.
+The pinned `reactor-sdk==1.5.1` is installed by bootstrap and Docker. Its Linux
+wheels require glibc 2.34 or newer; the Debian trixie image satisfies that floor.
+No microphone or speaker device dependency is needed.
+
 Titles containing the whole word `football`, ignoring case, receive suggestions
 from caption cues and audio energy. Other titles skip captions and audio analysis
 and open manual selection. A loud audio peak is not a confirmed crowd detection.
@@ -105,6 +135,7 @@ publishing a host. Docker was not available on the development machine.
 | Variable | Purpose |
 | --- | --- |
 | `FAL_KEY` | Server-side Fal API key |
+| `REACTOR_API_KEY` | Optional server-side Reactor key for X2 remixes |
 | `FOOTBALL_DATA_DIR` | Persistent sources, jobs and exports; defaults to `.runtime` |
 | `FOOTBALL_YTDLP` | Optional yt-dlp executable path |
 | `FOOTBALL_FFMPEG` | Optional absolute FFmpeg path; FFprobe remains on PATH |
@@ -122,11 +153,11 @@ not submit another generation for an ambiguous or failed request.
 ```sh
 .venv/bin/python doctor.py --model
 .venv/bin/python -m unittest discover -v -p 'test_*.py'
-node --test test_ui_recovery.js
+node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js
 .venv/bin/python build_ui.py
 ```
 
-Tests use local fixtures and mocked provider calls, without paid Fal requests.
+Tests use local fixtures and mocked provider calls, without paid Fal or Reactor requests.
 Real media tests need the listed tools and include 4K encoding.
 
 Licensed under [MIT](../LICENSE). See [third-party notices](../THIRD_PARTY_NOTICES.md)

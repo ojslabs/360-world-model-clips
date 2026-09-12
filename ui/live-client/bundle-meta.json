@@ -1,0 +1,355 @@
+{
+  "inputs": {
+    "node_modules/ms/index.js": {
+      "bytes": 3024,
+      "imports": [],
+      "format": "cjs"
+    },
+    "node_modules/debug/src/common.js": {
+      "bytes": 6915,
+      "imports": [
+        {
+          "path": "node_modules/ms/index.js",
+          "kind": "require-call",
+          "original": "ms"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/debug/src/browser.js": {
+      "bytes": 6103,
+      "imports": [
+        {
+          "path": "node_modules/debug/src/common.js",
+          "kind": "require-call",
+          "original": "./common"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/awaitqueue/lib/Logger.js": {
+      "bytes": 1307,
+      "imports": [
+        {
+          "path": "node_modules/debug/src/browser.js",
+          "kind": "require-call",
+          "original": "debug"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/awaitqueue/lib/errors.js": {
+      "bytes": 1126,
+      "imports": [],
+      "format": "cjs"
+    },
+    "node_modules/awaitqueue/lib/AwaitQueue.js": {
+      "bytes": 7154,
+      "imports": [
+        {
+          "path": "node_modules/awaitqueue/lib/Logger.js",
+          "kind": "require-call",
+          "original": "./Logger"
+        },
+        {
+          "path": "node_modules/awaitqueue/lib/errors.js",
+          "kind": "require-call",
+          "original": "./errors"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/awaitqueue/lib/index.js": {
+      "bytes": 670,
+      "imports": [
+        {
+          "path": "node_modules/awaitqueue/lib/AwaitQueue.js",
+          "kind": "require-call",
+          "original": "./AwaitQueue"
+        },
+        {
+          "path": "node_modules/awaitqueue/lib/errors.js",
+          "kind": "require-call",
+          "original": "./errors"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/react/cjs/react.production.js": {
+      "bytes": 18040,
+      "imports": [],
+      "format": "cjs"
+    },
+    "node_modules/react/index.js": {
+      "bytes": 186,
+      "imports": [
+        {
+          "path": "node_modules/react/cjs/react.production.js",
+          "kind": "require-call",
+          "original": "./cjs/react.production.js"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/react/cjs/react-jsx-runtime.production.js": {
+      "bytes": 976,
+      "imports": [],
+      "format": "cjs"
+    },
+    "node_modules/react/jsx-runtime.js": {
+      "bytes": 210,
+      "imports": [
+        {
+          "path": "node_modules/react/cjs/react-jsx-runtime.production.js",
+          "kind": "require-call",
+          "original": "./cjs/react-jsx-runtime.production.js"
+        }
+      ],
+      "format": "cjs"
+    },
+    "node_modules/@reactor-team/js-sdk/dist/wasm/reactor_wasm.js": {
+      "bytes": 58251,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs": {
+      "bytes": 377,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/mp4box/dist/styp-9TIZZDLN.mjs": {
+      "bytes": 236007,
+      "imports": [
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/mp4box/dist/mp4box.all.mjs": {
+      "bytes": 91813,
+      "imports": [
+        {
+          "path": "node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs",
+          "kind": "import-statement",
+          "original": "./rolldown-runtime-w6R9maHv.mjs"
+        },
+        {
+          "path": "node_modules/mp4box/dist/styp-9TIZZDLN.mjs",
+          "kind": "import-statement",
+          "original": "./styp-9TIZZDLN.mjs"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/hls.js/dist/hls.mjs": {
+      "bytes": 1484971,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/@reactor-team/js-sdk/dist/index.js": {
+      "bytes": 87956,
+      "imports": [
+        {
+          "path": "node_modules/awaitqueue/lib/index.js",
+          "kind": "import-statement",
+          "original": "awaitqueue"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/jsx-runtime.js",
+          "kind": "import-statement",
+          "original": "react/jsx-runtime"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/jsx-runtime.js",
+          "kind": "import-statement",
+          "original": "react/jsx-runtime"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/jsx-runtime.js",
+          "kind": "import-statement",
+          "original": "react/jsx-runtime"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/jsx-runtime.js",
+          "kind": "import-statement",
+          "original": "react/jsx-runtime"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/index.js",
+          "kind": "import-statement",
+          "original": "react"
+        },
+        {
+          "path": "node_modules/react/jsx-runtime.js",
+          "kind": "import-statement",
+          "original": "react/jsx-runtime"
+        },
+        {
+          "path": "node_modules/@reactor-team/js-sdk/dist/wasm/reactor_wasm.js",
+          "kind": "dynamic-import",
+          "original": "./wasm/reactor_wasm.js"
+        },
+        {
+          "path": "node_modules/mp4box/dist/mp4box.all.mjs",
+          "kind": "dynamic-import",
+          "original": "mp4box"
+        },
+        {
+          "path": "node_modules/hls.js/dist/hls.mjs",
+          "kind": "dynamic-import",
+          "original": "hls.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/@reactor-models/x2/dist/chunk-DCWM4L5G.mjs": {
+      "bytes": 10608,
+      "imports": [
+        {
+          "path": "node_modules/@reactor-team/js-sdk/dist/index.js",
+          "kind": "import-statement",
+          "original": "@reactor-team/js-sdk"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/@reactor-models/x2/dist/core.mjs": {
+      "bytes": 213,
+      "imports": [
+        {
+          "path": "node_modules/@reactor-models/x2/dist/chunk-DCWM4L5G.mjs",
+          "kind": "import-statement",
+          "original": "./chunk-DCWM4L5G.mjs"
+        }
+      ],
+      "format": "esm"
+    },
+    "controller.mjs": {
+      "bytes": 10658,
+      "imports": [],
+      "format": "esm"
+    },
+    "entry.mjs": {
+      "bytes": 235,
+      "imports": [
+        {
+          "path": "node_modules/@reactor-models/x2/dist/core.mjs",
+          "kind": "import-statement",
+          "original": "@reactor-models/x2/core"
+        },
+        {
+          "path": "controller.mjs",
+          "kind": "import-statement",
+          "original": "./controller.mjs"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "../assets/reactor-live.js.LEGAL.txt": {
+      "imports": [],
+      "exports": [],
+      "inputs": {},
+      "bytes": 623
+    },
+    "../assets/reactor-live.js": {
+      "imports": [],
+      "exports": [],
+      "entryPoint": "entry.mjs",
+      "inputs": {
+        "node_modules/ms/index.js": {
+          "bytesInOutput": 1396
+        },
+        "node_modules/debug/src/common.js": {
+          "bytesInOutput": 2057
+        },
+        "node_modules/debug/src/browser.js": {
+          "bytesInOutput": 2604
+        },
+        "node_modules/awaitqueue/lib/Logger.js": {
+          "bytesInOutput": 741
+        },
+        "node_modules/awaitqueue/lib/errors.js": {
+          "bytesInOutput": 580
+        },
+        "node_modules/awaitqueue/lib/AwaitQueue.js": {
+          "bytesInOutput": 2171
+        },
+        "node_modules/awaitqueue/lib/index.js": {
+          "bytesInOutput": 513
+        },
+        "node_modules/react/cjs/react.production.js": {
+          "bytesInOutput": 7942
+        },
+        "node_modules/react/index.js": {
+          "bytesInOutput": 51
+        },
+        "node_modules/react/cjs/react-jsx-runtime.production.js": {
+          "bytesInOutput": 364
+        },
+        "node_modules/react/jsx-runtime.js": {
+          "bytesInOutput": 51
+        },
+        "node_modules/@reactor-team/js-sdk/dist/wasm/reactor_wasm.js": {
+          "bytesInOutput": 22263
+        },
+        "node_modules/mp4box/dist/rolldown-runtime-w6R9maHv.mjs": {
+          "bytesInOutput": 171
+        },
+        "node_modules/mp4box/dist/styp-9TIZZDLN.mjs": {
+          "bytesInOutput": 129453
+        },
+        "node_modules/mp4box/dist/mp4box.all.mjs": {
+          "bytesInOutput": 55694
+        },
+        "node_modules/@reactor-team/js-sdk/dist/index.js": {
+          "bytesInOutput": 20488
+        },
+        "node_modules/@reactor-models/x2/dist/chunk-DCWM4L5G.mjs": {
+          "bytesInOutput": 1814
+        },
+        "controller.mjs": {
+          "bytesInOutput": 6184
+        },
+        "entry.mjs": {
+          "bytesInOutput": 75
+        }
+      },
+      "bytes": 255728
+    }
+  }
+}

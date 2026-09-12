@@ -78,6 +78,46 @@
           </div>
         </div>
       </div>
+      <div id="reactor-remix" class="reactor-remix" role="group" aria-labelledby="remix-heading">
+        <div class="section-row"><h3 id="remix-heading">4. Remix with Reactor</h3><span id="remix-model" class="quiet"></span></div>
+        <p class="remix-intro quiet">Preview Day and Night directly from Reactor.</p>
+        <div class="reactor-live" role="group" aria-label="Live Reactor preview">
+          <div class="live-controls">
+            <div class="remix-field live-clip-field"><label for="reactor-live-source">Finished clip</label><select id="reactor-live-source" disabled></select></div>
+            <div class="live-look" role="group" aria-label="Live look"><button id="reactor-live-day" class="secondary" type="button" aria-pressed="false">Day</button><button id="reactor-live-night" class="secondary" type="button" aria-pressed="true">Night</button></div>
+          </div>
+          <div class="live-actions"><div class="live-buttons"><button id="reactor-live-start" type="button" title="Uses Reactor credits" disabled>Start live preview</button><button id="reactor-live-stop" class="secondary" type="button" disabled>Stop</button></div><label class="check-label live-audio"><input id="reactor-live-audio" type="checkbox" disabled> Source audio (not synchronized)</label></div>
+          <div class="reactor-live-stage">
+            <video id="reactor-live-player" autoplay muted playsinline aria-label="Live video from Reactor"></video>
+            <p id="reactor-live-empty" class="quiet">Choose a clip, then start your live preview.</p>
+          </div>
+          <video id="reactor-live-source-video" muted playsinline preload="none" hidden aria-hidden="true"></video>
+          <p id="reactor-live-status" class="quiet" role="status" aria-live="polite">Live preview is stopped.</p>
+          <p id="reactor-live-prompt-status" class="quiet" role="status" aria-live="polite">Night selected. Start to connect.</p>
+          <p id="reactor-live-limit" class="live-limit quiet">Uses Reactor credits while connected. Look changes affect upcoming chunks.</p>
+        </div>
+        <details id="saved-remixes" class="compact-details saved-remixes"><summary>Saved remixes</summary><div class="details-body">
+        <form id="remix-form" class="remix-form">
+          <div class="remix-fields">
+            <div class="remix-field"><label for="remix-source">Finished clips</label><select id="remix-source" disabled></select></div>
+            <div class="remix-field"><label for="remix-preset">Look</label><select id="remix-preset" disabled></select></div>
+          </div>
+          <div class="remix-field"><label for="remix-prompt">Describe the remix</label><textarea id="remix-prompt" rows="4" required disabled></textarea></div>
+          <div class="remix-action"><p id="remix-connection" class="quiet" role="status">Loading Reactor presets…</p><button id="remix-generate" type="submit" title="Uses Reactor credits" disabled>Generate with Reactor</button></div>
+          <button id="remix-reconnect" class="text-button" type="button" hidden>Refresh Reactor connection</button>
+        </form>
+        <p id="remix-progress" class="remix-progress quiet" role="status" aria-live="polite" hidden></p>
+        <p id="remix-empty" class="empty">Your remixed clips will appear here.</p>
+        <div id="remix-workbench" hidden>
+          <div class="remix-field remix-result-picker"><label for="remix-result">Choose a remix</label><select id="remix-result"></select></div>
+          <div class="finished-output remix-output">
+            <video id="remix-player" controls playsinline preload="metadata" aria-label="Selected Reactor remix"></video>
+            <div class="output-heading-row"><h4 id="remix-title"></h4><a id="remix-download" class="download-highlight" download>Download remix ↓</a></div>
+            <p id="remix-summary" class="quiet"></p>
+          </div>
+        </div>
+        </div></details>
+      </div>
       <details class="compact-details source-exports" hidden><summary>Batch source exports <span id="selected-count" class="quiet">0</span></summary><div class="details-body">
         <span id="selection-duration" class="quiet"></span><div id="selected-list" class="selected-list"></div>
         <div class="export-row"><label class="check-label"><input type="checkbox" id="combined" checked> Include a combined source reel</label><button id="export" class="secondary" disabled>Download source clips ↓</button></div>
@@ -104,4 +144,5 @@
   <div id="status" role="status" aria-live="polite">Loading your workspace…</div>
   <footer class="studio-footer"><span>Workspace · OJS Labs</span></footer>
 </div>
+<script src="/assets/reactor-live.js" defer></script>
 <script src="/app.js" defer></script>

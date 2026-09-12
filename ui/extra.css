@@ -342,3 +342,43 @@ html,body,.paper.studio{background:#080808;color:var(--text)}
 @keyframes activity-working{0%{transform:translateX(-110%)}100%{transform:translateX(390%)}}
 @media(max-width:760px){.activity-panel{right:12px;bottom:12px;width:calc(100vw - 24px);max-width:370px}.activity-jobs{max-height:45dvh}.studio-footer{padding-bottom:70px}}
 @media(prefers-reduced-motion:reduce){.activity-jobs,.activity-card,.activity-meter[data-indeterminate=true]>span{animation:none}.activity-meter>span{transition:none}.studio button{transition:none}.studio button:active:not(:disabled){transform:none}}
+
+/* A separate finishing step keeps the original result player in place. */
+.reactor-remix{margin-top:40px;padding-top:28px;border-top:1px solid var(--line)}
+.reactor-remix>.section-row{margin-bottom:8px}
+.reactor-remix h3{font-size:22px;letter-spacing:-.035em}
+.remix-intro{margin:0 0 20px;font-size:13px}
+.remix-form{padding:20px;border:1px solid var(--line);border-radius:7px;background:var(--panel,#101010)}
+.remix-fields{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px;margin-bottom:18px}
+.remix-field{display:grid;gap:8px;min-width:0}
+.remix-field label{font-size:12px;color:var(--text2)}
+.studio .remix-field select,.studio .remix-field textarea{width:100%;min-width:0;font-family:var(--body);font-size:13px;line-height:1.6}
+.studio .remix-field textarea{min-height:112px;resize:vertical;padding:12px 14px;background:#080808;color:var(--text);border:1px solid var(--line-strong);border-radius:5px}
+.studio .remix-field textarea:focus-visible{outline:1px solid var(--gold);outline-offset:2px}
+.remix-action{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-top:18px}
+.remix-action p{font-size:12px;line-height:1.6;margin:0}
+.remix-action button{flex-shrink:0}
+.remix-progress{padding:14px 0;margin:0;font-size:12px;line-height:1.7}
+.remix-result-picker{margin:22px 0 12px}
+.remix-output video{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:4px;margin-bottom:20px}
+.remix-output #remix-summary{font-size:12px;line-height:1.6;margin-bottom:0}
+@media(max-width:760px){.reactor-remix{margin-top:32px;padding-top:24px}.remix-form{padding:15px}.remix-fields{grid-template-columns:1fr;gap:16px}.remix-action{align-items:stretch;flex-direction:column;gap:14px}.remix-action button{width:100%}.remix-output .output-heading-row{align-items:stretch}.remix-output .download-highlight{align-self:flex-start}}
+
+.reactor-live{padding:20px;border:1px solid var(--line);border-radius:7px;background:#101010}
+.live-controls{display:flex;align-items:flex-end;gap:24px;margin-bottom:18px}
+.live-clip-field{flex:1}
+.live-look{display:flex;gap:3px;padding:4px;border:1px solid var(--line);border-radius:8px;background:#080808}
+.studio .live-look button{border:0;box-shadow:none;border-radius:5px;min-width:86px;min-height:38px;background:transparent;color:var(--muted)}
+.studio .live-look button[aria-pressed=true]{background:#292822;color:var(--text)}
+.reactor-live-stage{position:relative;display:grid;place-items:center;aspect-ratio:16/9;overflow:hidden;border-radius:5px;background:#050505;border:1px solid var(--line)}
+.reactor-live-stage video{display:block;width:100%;height:100%;object-fit:contain;grid-area:1/1}
+.reactor-live-stage p{grid-area:1/1;z-index:1;text-align:center;padding:24px;font-size:13px;pointer-events:none}
+.live-actions{display:flex;justify-content:space-between;align-items:center;gap:24px;margin:18px 0 14px}
+.live-buttons{display:flex;gap:10px}
+.live-audio{font-size:12px;white-space:nowrap}
+.reactor-live #reactor-live-status{margin:0;font-size:13px;color:var(--text2)}
+.reactor-live #reactor-live-prompt-status{margin:7px 0 0;font-size:12px}
+.reactor-live .live-limit{font-size:11px;line-height:1.6;margin:14px 0 0}
+.saved-remixes{margin-top:20px}
+.saved-remixes>.details-body{padding:18px}
+@media(max-width:760px){.reactor-live{padding:15px}.live-controls{flex-direction:column;align-items:stretch;gap:14px}.live-look{align-self:flex-start}.live-actions{align-items:flex-start;flex-direction:column;gap:16px}.live-buttons{width:100%}.live-buttons button:first-child{flex:1}.reactor-live-stage p{font-size:12px;padding:14px}.saved-remixes>.details-body{padding:12px}}

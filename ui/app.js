@@ -13,6 +13,12 @@ let initialOutputScrollDone = false;
 let availableAppBuild = null, lastAppBuildCheck = null, appBuildCheckRunning = false;
 const selectedOutputs = new Set(), knownOutputs = new Set();
 const viewedOutputs = new Map();
+const remixDrafts = new Map(), viewedRemixes = new Map(), knownRemixes = new Set(), pendingRemixSources = new Set();
+let remixCatalog = null, remixCatalogLoading = false, remixCatalogError = "";
+const liveClipSelections = new Map();
+let liveLook = "night", liveSession = null, liveSessionSequence = 0;
+let livePreviewState = { state: "idle", message: "Live preview is stopped." };
+let livePromptMessage = "Night selected. Start to connect.";
 const actionLabelQueues = new Map();
 const activityCards = new Map(), activitySeen = new Map();
 let activityTimer = null, activityAvailable = false, activitySignature = null, activityCollapsed = true;
@@ -302,6 +308,8 @@ function applyWorkspaceReset(snapshot) {
   }
   try { sessionStorage.removeItem(UPDATE_VIEW_STORAGE_KEY); } catch { /* No pending view is retained in this tab. */ }
   pendingGenerations.clear(); generationMonitors.clear(); selectedOutputs.clear(); knownOutputs.clear(); viewedOutputs.clear();
+  remixDrafts.clear(); viewedRemixes.clear(); knownRemixes.clear(); pendingRemixSources.clear();
+  stopLivePreview("Live preview stopped for the workspace reset."); liveClipSelections.clear();
   for (const queue of actionLabelQueues.values()) clearTimeout(queue.timer);
   actionLabelQueues.clear(); activitySeen.clear(); activitySignature = null;
   projectId = null; activeId = null; previewEnd = null; initialOutputScrollDone = true;
@@ -321,7 +329,7 @@ async function refresh({ onlyChanged = false } = {}) {
   const unchanged = !reset && visibleWorkspace(state) === visibleWorkspace(snapshot);
   state = snapshot;
   renderActivity();
-  if (onlyChanged && unchanged) { renderNewestOutput(); renderOutputRunStatus(); return; }
+  if (onlyChanged && unchanged) { renderNewestOutput(); renderOutputRunStatus(); renderRemixes(); return; }
   if (!project()) projectId = state.projects.find((p) => p.id === state.seed)?.id || state.projects[0]?.id;
   rememberProject();
   const select = $("source-select"); select.replaceChildren();
@@ -345,7 +353,8 @@ async function alignInitialOutputs() {
 function workspaceRefreshDelay() {
   const running = (item) => ["queued", "running"].includes(item.status);
   const active = pendingGenerations.size || (state.jobs || []).some(running)
-    || state.projects.some((source) => source.status === "preparing_preview" || (source.generations || []).some(running));
+    || state.projects.some((source) => source.status === "preparing_preview" || (source.generations || []).some(running)
+      || (source.remixes || []).some(running));
   return active && !activityAvailable ? 3000 : 10000;
 }
 function scheduleWorkspaceRefresh() {
@@ -394,8 +403,12 @@ function activityPresentation(job, now = Date.now() + activityClockOffset) {
   if (running && Number.isFinite(progress.eta_seconds) && progress.eta_seconds >= 0) metrics.push(`About ${durationText(progress.eta_seconds)} remaining${progress.scope === "current_stream" ? " in this stream" : ""}`);
   const stageStarted = activityTime(progress.stage_started_at);
   if (running && stageStarted !== null) metrics.push(`${durationText((now - stageStarted) / 1000)} in this stage`);
-  return { running, stage, label: displayText(label), percent, elapsed, metrics: metrics.join(" · "),
-    title: displayText(job.kind || "Workspace task"), error: running || job.status === "complete" ? "" : displayText(job.error || "The task stopped. Its saved files are preserved.") };
+  if (job.operation === "remix" && Number.isFinite(progress.frames_received)) {
+    metrics.push(`${progress.frames_received}${Number.isFinite(progress.frames_expected) ? ` / ${progress.frames_expected}` : ""} frames received`);
+  }
+  const text = job.operation === "remix" ? remixText : displayText;
+  return { running, stage, label: job.operation === "remix" && running && stage === "generating" ? "Generating with Reactor" : text(label), percent, elapsed, metrics: metrics.join(" · "),
+    title: text(job.kind || "Workspace task"), error: running || job.status === "complete" ? "" : text(job.error || "The task stopped. Its saved files are preserved.") };
 }
 function activityStateSignature(jobs) {
   return JSON.stringify(jobs.map((job) => [job.id, job.status, job.video_id, job.run_id, job.progress?.stage || job.stage, job.delivery_ready]));
@@ -412,7 +425,7 @@ function renderActivity(jobs = state.jobs || [], now = Date.now() + activityCloc
     const previous = activitySeen.get(job.id);
     if ((activityIsRunning(job) && !previous) || (previous && activityIsRunning(previous) && !activityIsRunning(job))) {
       activityCollapsed = false;
-      announce = `${displayText(job.kind || "Task")}: ${activityPresentation(job, now).label}.`;
+      announce = `${job.operation === "remix" ? remixText(job.kind || "Reactor remix") : displayText(job.kind || "Task")}: ${activityPresentation(job, now).label}.`;
     }
     activitySeen.set(job.id, { status: job.status });
   }
@@ -440,6 +453,14 @@ function renderActivity(jobs = state.jobs || [], now = Date.now() + activityCloc
       card = { root, title, elapsed, source, label, percent, meter, fill, metrics, error, view, job };
       view.addEventListener("click", () => {
         const source = state.projects.find((item) => item.id === card.job.video_id); if (!source) return;
+        if (card.job.operation === "remix") {
+          projectId = source.id; activeId = null; rememberProject(); render();
+          if (source.remixes?.some((item) => item.id === card.job.remix_id && item.status === "complete" && item.url)) {
+            viewedRemixes.set(projectId, card.job.remix_id); renderRemixViewer();
+          }
+          $("source-select").value = source.id;
+          $("reactor-remix").scrollIntoView({ behavior: "smooth", block: "start" }); return;
+        }
         const run = source.generations?.find((item) => item.id === card.job.run_id);
         const output = [...(run?.composites || [])].reverse().find((clip) => clip.url && clip.media?.duration);
         if (output) { openFinishedOutput({ source, clip: output }); return; }
@@ -449,6 +470,7 @@ function renderActivity(jobs = state.jobs || [], now = Date.now() + activityCloc
       activityCards.set(job.id, card); container.append(root);
     }
     card.job = job;
+    card.view.textContent = job.operation === "remix" ? "View remix →" : "View video →";
     const value = activityPresentation(job, now), source = state.projects.find((item) => item.id === job.video_id);
     card.root.dataset.status = job.status; card.title.textContent = value.title; card.elapsed.textContent = value.elapsed;
     card.source.textContent = source?.title || job.video_id || ""; card.source.hidden = !card.source.textContent;
@@ -465,6 +487,7 @@ function renderActivity(jobs = state.jobs || [], now = Date.now() + activityCloc
   $("activity-jobs").dataset.empty = String(!visible.length);
   if (announce) $("activity-announcement").textContent = announce;
   setActivityCollapsed(activityCollapsed);
+  renderRemixProgress(jobs);
 }
 async function pollActivity() {
   try {
@@ -510,6 +533,7 @@ function applyAppUpdateWhenIdle() {
       || player.paused !== true || $("output-player").paused !== true || $("search-preview").open
       || /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName || "") || focused?.isContentEditable
       || pendingGenerations.size || activeLocalJobs || (state.jobs || []).some(activityIsRunning)
+      || liveSession
       || state.projects.some((source) => source.status === "preparing_preview" || (source.generations || []).some(activityIsRunning))
       || [...actionLabelQueues.values()].some((queue) => queue.active || queue.next)
       || [...(document.querySelectorAll?.("video") || [])].some((video) => !video.paused)) return false;
@@ -636,7 +660,7 @@ function render() {
   }
 }
 function renderEmptyWorkspace() {
-  for (const video of [player, $("output-player")]) {
+  for (const video of [player, $("output-player"), $("remix-player")]) {
     video.pause(); video.removeAttribute("src"); video.load(); delete video.dataset.source; delete video.dataset.output;
   }
   $("freeze-preview").hidden = true; $("freeze-preview").removeAttribute("src");
@@ -651,6 +675,7 @@ function renderEmptyWorkspace() {
   for (const id of ["source-original-resolution", "source-detail", "source-quality-note", "clip-detection", "cue-text", "cue-kind", "output-summary", "output-resolution", "output-quality", "selection-audio", "selection-duration", "artifact-count", "status"]) $(id).textContent = "";
   $("source-original-link").removeAttribute("href");
   $("timecode").textContent = "00:00.000"; $("selected-count").textContent = "0"; $("candidate-count").textContent = "0"; $("output-count").textContent = "";
+  renderRemixes({ empty: true });
 }
 function renderSelection() {
   const p = project(); if (!p) return;
@@ -953,7 +978,336 @@ function renderOutputs() {
     const row = node("div", undefined, "reel-links"), link = node("a", `Combined highlights · ${Math.round(reel.media.duration)}s ↓`);
     link.href = reel.url; link.download = `${reel.id}.mp4`; row.append(link); reels.append(row);
   }
+  renderRemixes();
 }
+function remixOptions(select, options, selected) {
+  const signature = JSON.stringify(options);
+  if (select.dataset.options !== signature) {
+    select.replaceChildren();
+    for (const item of options) {
+      const option = node("option"); option.textContent = remixText(item.label); option.value = item.id; select.append(option);
+    }
+    select.dataset.options = signature;
+  }
+  select.value = selected || "";
+}
+function remixText(value) {
+  return String(value ?? "").replace(/\b(?:FAL_KEY|REACTOR_API_KEY)\b/gi, "the connection");
+}
+function remixStatus(message) { $("status").textContent = remixText(message); }
+function remixClips() {
+  return finishedClips().filter((clip) => clip.id && clip.url && Number.isFinite(clip.media?.duration));
+}
+function remixDraft() {
+  if (!projectId) return null;
+  if (!remixDrafts.has(projectId)) remixDrafts.set(projectId, { source: "__all__", preset_id: null, prompt: "", message: "" });
+  return remixDrafts.get(projectId);
+}
+async function loadRemixPresets() {
+  if (remixCatalogLoading) return;
+  remixCatalogLoading = true; remixCatalogError = ""; renderRemixes();
+  try {
+    const value = await api("/api/remix-presets", undefined, 15000);
+    if (!Array.isArray(value.presets) || !value.presets.length || value.presets.some((item) =>
+      typeof item.id !== "string" || typeof item.label !== "string" || typeof item.prompt !== "string")) {
+      throw new Error("Reactor presets are unavailable.");
+    }
+    remixCatalog = value;
+  } catch (error) {
+    remixCatalogError = error.status === 404 ? "Reactor remix is not available on this server yet." : error.message;
+  } finally { remixCatalogLoading = false; renderRemixes(); }
+}
+function renderRemixViewer(remixes = project()?.remixes || []) {
+  const remix = remixes.find((item) => item.id === viewedRemixes.get(projectId) && item.status === "complete" && item.url);
+  if (!remix) return;
+  const video = $("remix-player");
+  if (video.dataset.output !== remix.id || video.getAttribute("src") !== remix.url) {
+    video.pause(); video.src = remix.url; video.dataset.output = remix.id;
+  }
+  $("remix-result").value = remix.id;
+  const title = remixText(remix.label || "Reactor remix");
+  video.setAttribute("aria-label", title); $("remix-title").textContent = title;
+  $("remix-download").href = remix.url; $("remix-download").download = `${remix.id}.mp4`;
+  const original = remixClips().find((clip) => clip.id === remix.composite_id);
+  $("remix-summary").textContent = [
+    [remixCatalog?.provider || "Reactor", remixCatalog?.model].filter(Boolean).join(" "),
+    Number.isFinite(remix.media?.duration) ? `${Number(remix.media.duration.toFixed(2))}s` : "",
+    Number.isFinite(remix.media?.height) ? `${remix.media.height}p output` : "",
+    original ? `From clip ${original.test_number} · source ${clock(original.freeze_time)}` : "",
+  ].filter(Boolean).join(" · ");
+}
+function livePrompt(mode = liveLook) {
+  const prompt = remixCatalog?.live_prompts?.[mode];
+  return typeof prompt === "string" && prompt.trim() ? prompt : null;
+}
+function liveSessionLimit() {
+  const seconds = Number(remixCatalog?.live_max_session_seconds);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+function liveLimitLabel(seconds) {
+  return seconds % 60 === 0 ? `${seconds / 60} minutes` : `${seconds} seconds`;
+}
+function setLiveDeadline(session, seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0 || (session.maxSeconds && seconds >= session.maxSeconds)) return;
+  session.maxSeconds = seconds;
+  if (session.timer) clearTimeout(session.timer);
+  session.timer = setTimeout(() => {
+    if (liveSession === session) stopLivePreview(`Live preview stopped at the ${liveLimitLabel(session.maxSeconds)} limit.`);
+  }, Math.max(0, session.startedAt + seconds * 1000 - Date.now()));
+}
+function tickLiveElapsed(session) {
+  if (liveSession !== session) return;
+  renderLivePreview();
+  if (liveSession !== session) return;
+  session.clockTimer = setTimeout(() => tickLiveElapsed(session), 1000);
+}
+function renderLivePreview({ empty = false } = {}) {
+  if (liveSession && (empty || liveSession.sourceId !== projectId)) {
+    stopLivePreview("Live preview stopped when the source changed."); return;
+  }
+  const clips = empty ? [] : remixClips();
+  if (!clips.some((clip) => clip.id === liveClipSelections.get(projectId))) {
+    liveClipSelections.set(projectId, clips.find((clip) => clip.id === viewedOutputs.get(projectId))?.id || clips[0]?.id);
+  }
+  remixOptions($("reactor-live-source"), clips.length ? clips.map((clip) => ({ id: clip.id, label: outputLabel(clip) }))
+    : [{ id: "", label: "Finish a clip above to begin" }], liveClipSelections.get(projectId));
+  $("reactor-live-source").disabled = !clips.length || !!liveSession;
+  $("reactor-live-start").disabled = !!liveSession || !clips.length || !livePrompt() || !liveSessionLimit()
+    || !remixCatalog?.configured || typeof window.ReactorLive?.create !== "function";
+  $("reactor-live-stop").disabled = !liveSession;
+  $("reactor-live-audio").disabled = !liveSession;
+  for (const look of ["day", "night"]) {
+    $("reactor-live-" + look).setAttribute("aria-pressed", String(look === liveLook));
+    $("reactor-live-" + look).disabled = !livePrompt(look);
+  }
+  const labels = { loading_source: "Loading the selected clip", authenticating: "Connecting to Reactor",
+    connecting: "Connecting the live stream", streaming_source: "Sending the source video to Reactor",
+    generating: liveSession?.hasPicture ? "Waiting for Reactor's next chunk" : "Waiting for Reactor's first live picture", live: "Live from Reactor", stopped: "Live preview stopped" };
+  let message = livePreviewState.message || labels[livePreviewState.state] || "Live preview is stopped.";
+  if (!liveSession && livePreviewState.state === "idle") {
+    message = remixCatalogLoading ? "Loading Reactor settings…" : !remixCatalog?.configured ? "Connect Reactor to start a live preview."
+      : typeof window.ReactorLive?.create !== "function" ? "The live preview adapter is unavailable. Reload the app to try again."
+      : !livePrompt() ? "Live Day/Night prompts are unavailable. Refresh the Reactor connection."
+      : !liveSessionLimit() ? "Live session settings are unavailable. Refresh the Reactor connection."
+      : !clips.length ? "Choose a finished clip above to continue." : "Ready. Start connects to Reactor.";
+  }
+  const details = [];
+  if (Number.isFinite(livePreviewState.width) && Number.isFinite(livePreviewState.height)) details.push(`${livePreviewState.width} × ${livePreviewState.height}`);
+  if (liveSession) details.push(`${durationText(Math.max(0, Date.now() - liveSession.startedAt) / 1000)} elapsed`);
+  $("reactor-live-status").textContent = [message, ...details].join(" · ");
+  $("reactor-live-prompt-status").textContent = livePromptMessage;
+  const limit = liveSession?.maxSeconds || liveSessionLimit();
+  $("reactor-live-limit").textContent = `Uses Reactor credits while connected. ${limit ? `Stops after ${liveLimitLabel(limit)}. ` : ""}Look changes affect upcoming chunks.`;
+  $("reactor-live-empty").hidden = !!liveSession?.hasPicture;
+  $("reactor-live-empty").textContent = liveSession ? labels[livePreviewState.state] || "Waiting for the live picture…"
+    : livePreviewState.state === "error" ? "Live preview stopped. Review the message below." : "Choose a clip, then start your live preview.";
+}
+function stopLivePreview(message = "Live preview stopped.", stateName = "stopped") {
+  const session = liveSession;
+  liveSession = null;
+  if (session?.timer) clearTimeout(session.timer);
+  if (session?.clockTimer) clearTimeout(session.clockTimer);
+  livePreviewState = { state: stateName, message };
+  livePromptMessage = `${liveLook === "day" ? "Day" : "Night"} selected. Start to connect.`;
+  if (session?.client) {
+    try { Promise.resolve(session.client.stop()).catch(() => {}); } catch { /* Local media cleanup still runs. */ }
+  }
+  for (const video of [$("reactor-live-source-video"), $("reactor-live-player")]) {
+    video.pause(); video.srcObject = null; video.muted = true;
+  }
+  $("reactor-live-audio").checked = false;
+  renderLivePreview();
+}
+async function startLivePreview() {
+  if (liveSession || !remixCatalog?.configured || !livePrompt() || !liveSessionLimit() || typeof window.ReactorLive?.create !== "function") return;
+  const clip = remixClips().find((item) => item.id === liveClipSelections.get(projectId));
+  if (!clip) return;
+  const session = { sequence: ++liveSessionSequence, sourceId: projectId, clipId: clip.id, prompt: livePrompt(), client: null,
+    timer: null, clockTimer: null, startedAt: Date.now(), maxSeconds: null, hasPicture: false, ready: false };
+  liveSession = session; livePreviewState = { state: "loading_source", elapsedMs: 0 };
+  livePromptMessage = `${liveLook === "day" ? "Day" : "Night"} requested. Waiting for Reactor.`;
+  $("reactor-live-audio").checked = false; $("reactor-live-source-video").muted = true; $("reactor-live-player").muted = true;
+  renderLivePreview();
+  try {
+    session.client = window.ReactorLive.create({
+      onStatus: (event) => {
+        if (liveSession !== session) return;
+        if (event.state === "stopped" || event.state === "error") {
+          stopLivePreview(event.message || (event.state === "error" ? "Reactor live preview failed." : "Live preview stopped."), event.state); return;
+        }
+        if (event.state === "live") session.hasPicture = true;
+        setLiveDeadline(session, event.maxSessionSeconds);
+        livePreviewState = { ...livePreviewState, ...event, message: event.message }; renderLivePreview();
+      },
+      onError: (error) => {
+        if (liveSession === session) stopLivePreview(error?.message || "Reactor live preview failed.", "error");
+      },
+      onPromptApplied: (event) => {
+        if (liveSession !== session) return;
+        const acknowledged = typeof event === "string" ? event : event?.prompt;
+        if (acknowledged && acknowledged !== session.prompt) return;
+        livePromptMessage = acknowledged
+          ? `${liveLook === "day" ? "Day" : "Night"} requested · accepted for an upcoming chunk.`
+          : `${liveLook === "day" ? "Day" : "Night"} requested. Reactor accepted a prompt for an upcoming chunk.`;
+        renderLivePreview();
+      },
+    });
+    if (liveSession !== session) { await session.client.stop(); return; }
+    setLiveDeadline(session, liveSessionLimit());
+    tickLiveElapsed(session);
+    const initialPrompt = session.prompt;
+    await session.client.start({ sourceUrl: clip.url, videoElement: $("reactor-live-player"),
+      sourceVideo: $("reactor-live-source-video"), prompt: initialPrompt });
+    if (liveSession !== session) return;
+    session.ready = true;
+    if (session.prompt !== initialPrompt) await session.client.setPrompt(session.prompt);
+  } catch (error) {
+    if (liveSession === session) stopLivePreview(error?.message || "Could not start Reactor live preview.", "error");
+  }
+}
+async function changeLiveLook(look) {
+  if (!["day", "night"].includes(look) || !livePrompt(look) || liveLook === look) return;
+  liveLook = look;
+  const session = liveSession;
+  livePromptMessage = `${look === "day" ? "Day" : "Night"} ${session ? "requested. Waiting for the next chunk." : "selected. Start to connect."}`;
+  renderLivePreview();
+  if (!session) return;
+  session.prompt = livePrompt(look);
+  if (!session.ready) return;
+  try { await session.client.setPrompt(session.prompt); }
+  catch (error) { if (liveSession === session) stopLivePreview(error?.message || "Could not send the requested look to Reactor.", "error"); }
+}
+$("reactor-live-start").addEventListener("click", startLivePreview);
+$("reactor-live-stop").addEventListener("click", () => stopLivePreview());
+$("reactor-live-day").addEventListener("click", () => changeLiveLook("day"));
+$("reactor-live-night").addEventListener("click", () => changeLiveLook("night"));
+$("reactor-live-source").addEventListener("change", () => {
+  if (!liveSession) { liveClipSelections.set(projectId, $("reactor-live-source").value); renderLivePreview(); }
+});
+$("reactor-live-audio").addEventListener("change", () => {
+  $("reactor-live-source-video").muted = !liveSession || !$("reactor-live-audio").checked;
+});
+window.addEventListener("pagehide", () => stopLivePreview("Live preview stopped because the page closed."));
+function renderRemixProgress(jobs = state.jobs || [], { empty = false } = {}) {
+  const remixes = empty ? [] : project()?.remixes || [];
+  const activeJobs = empty ? [] : jobs.filter((job) => job.operation === "remix" && job.video_id === projectId && activityIsRunning(job));
+  const running = remixes.filter((item) => ["queued", "running"].includes(item.status));
+  const count = Math.max(activeJobs.length, running.length);
+  const current = activeJobs.find((item) => item.status === "running") || activeJobs[0];
+  const stopped = [...remixes].sort((a, b) => (activityTime(b.created_at) || 0) - (activityTime(a.created_at) || 0))
+    .find((item) => ["failed", "interrupted"].includes(item.status) && !remixes.some((later) =>
+      later.status === "complete" && later.url && item.composite_id && later.composite_id === item.composite_id
+      && later.preset_id === item.preset_id && later.prompt === item.prompt
+      && activityTime(item.created_at) !== null && activityTime(later.created_at) !== null
+      && activityTime(later.created_at) > activityTime(item.created_at)));
+  const draft = empty ? null : remixDrafts.get(projectId);
+  let progress = "";
+  if (count) {
+    const measured = current ? activityPresentation(current) : null;
+    progress = [`${count} Reactor ${count === 1 ? "remix is" : "remixes are"} processing.`,
+      measured?.label || running[0]?.message || "Waiting for Reactor.",
+      measured?.percent === null || measured?.percent === undefined ? "" : `${Math.round(measured.percent)}%`,
+      measured?.metrics, measured?.elapsed].filter(Boolean).join(" · ");
+    $("remix-generate").disabled = true;
+  } else if (!empty && pendingRemixSources.has(projectId)) progress = "Sending your clips to Reactor…";
+  else progress = draft?.message || (stopped ? stopped.error || stopped.message || "A Reactor remix stopped before completion." : "");
+  $("remix-progress").textContent = remixText(progress); $("remix-progress").hidden = !progress;
+}
+function renderRemixes({ empty = false } = {}) {
+  const clips = empty ? [] : remixClips(), draft = empty ? null : remixDraft();
+  const presets = remixCatalog?.presets || [];
+  if (draft && presets.length && !presets.some((preset) => preset.id === draft.preset_id)) {
+    const preset = presets.find((item) => /^day\s+to\s+night$/i.test(item.label.trim())) || presets[0];
+    draft.preset_id = preset.id; draft.prompt = preset.prompt;
+  }
+  if (draft && draft.source !== "__all__" && !clips.some((clip) => clip.id === draft.source)) draft.source = "__all__";
+  remixOptions($("remix-source"), clips.length
+    ? [{ id: "__all__", label: `All finished clips (${clips.length})` }, ...clips.map((clip) => ({ id: clip.id, label: outputLabel(clip) }))]
+    : [{ id: "", label: "Finish a clip above to begin" }], clips.length ? draft?.source : "");
+  remixOptions($("remix-preset"), presets.map((item) => ({ id: item.id, label: item.label })), draft?.preset_id);
+  if ($("remix-prompt").value !== (draft?.prompt || "")) $("remix-prompt").value = draft?.prompt || "";
+  $("remix-source").disabled = !clips.length;
+  $("remix-preset").disabled = !presets.length || !draft;
+  $("remix-prompt").disabled = !presets.length || !draft;
+  $("remix-model").textContent = remixCatalog?.model || "";
+  const remixes = empty ? [] : [...(project()?.remixes || [])].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
+  const running = remixes.filter((item) => ["queued", "running"].includes(item.status));
+  const pending = pendingRemixSources.has(projectId) || running.length > 0;
+  $("remix-generate").disabled = !clips.length || !draft?.prompt.trim() || !draft?.preset_id
+    || !remixCatalog?.configured || !!remixCatalogError || remixCatalogLoading || pending;
+  const count = draft?.source === "__all__" ? clips.length : 1;
+  $("remix-connection").textContent = remixCatalogLoading ? "Loading Reactor presets…"
+    : remixCatalogError ? remixText(remixCatalogError)
+    : !remixCatalog?.configured ? "Connect Reactor on the server to generate remixes."
+    : !clips.length ? "Choose a finished clip above to continue."
+    : `${count} ${count === 1 ? "clip" : "clips"} will be sent to Reactor. Uses Reactor credits.`;
+  $("remix-reconnect").hidden = remixCatalogLoading || (!remixCatalogError && !!remixCatalog?.configured);
+  renderRemixProgress(state.jobs || [], { empty });
+  const complete = remixes.filter((item) => item.status === "complete" && item.id && item.url);
+  const newResults = complete.filter((item) => !knownRemixes.has(`${projectId}:${item.id}`));
+  if (newResults.length || !complete.some((item) => item.id === viewedRemixes.get(projectId))) {
+    viewedRemixes.set(projectId, (newResults[0] || complete[0])?.id);
+  }
+  for (const item of complete) knownRemixes.add(`${projectId}:${item.id}`);
+  remixOptions($("remix-result"), complete.map((item, index) => ({ id: item.id,
+    label: `${remixText(item.label || "Remix")} · ${complete.length - index}${Number.isFinite(item.media?.duration) ? ` · ${Math.round(item.media.duration)}s` : ""}` })), viewedRemixes.get(projectId));
+  $("remix-workbench").hidden = !complete.length; $("remix-empty").hidden = !!complete.length || pending;
+  if (complete.length) renderRemixViewer(complete);
+  else if ($("remix-player").getAttribute("src")) {
+    $("remix-player").pause(); $("remix-player").removeAttribute("src"); $("remix-player").load(); delete $("remix-player").dataset.output;
+  }
+  renderLivePreview({ empty });
+}
+async function submitRemix(event) {
+  event?.preventDefault();
+  const sourceId = projectId, draft = remixDraft(), clips = remixClips(), epoch = workspaceResetEpoch;
+  if (!draft || !clips.length || !draft.prompt.trim() || !draft.preset_id || !remixCatalog?.configured
+      || remixCatalogError || pendingRemixSources.has(sourceId)
+      || (project()?.remixes || []).some((item) => ["queued", "running"].includes(item.status))) return;
+  const chosen = draft.source === "__all__" ? clips.map((clip) => clip.id) : clips.filter((clip) => clip.id === draft.source).map((clip) => clip.id);
+  if (!chosen.length) return;
+  const request = { video_id: sourceId, preset_id: draft.preset_id, prompt: draft.prompt,
+    ...(draft.source === "__all__" ? { composite_ids: chosen } : { composite_id: chosen[0] }) };
+  pendingRemixSources.add(sourceId); activeLocalJobs++; draft.message = ""; renderRemixes();
+  remixStatus("Sending your clips to Reactor…");
+  try {
+    const started = await api("/api/remix", request);
+    const jobs = started.jobs || [started];
+    if (!jobs.length || jobs.some((item) => !item.job_id)) throw new Error("Reactor submission could not be confirmed. Refresh to check saved jobs before trying again.");
+    try { await refresh({ onlyChanged: true }); } catch { /* Read-only polling still tracks acknowledged jobs. */ }
+    const outcomes = await Promise.all(jobs.map((item) => pollGeneration({ job_id: item.job_id }, {
+      pollInterval: localJobPollInterval, isCurrent: () => workspaceResetEpoch === epoch,
+      onStatus: (message) => remixStatus(message.startsWith("Reconnecting")
+        ? "Reconnecting to your existing Reactor jobs. No new remix has been submitted." : "Reactor is creating your remixes."),
+    })));
+    if (workspaceResetEpoch !== epoch) return;
+    const complete = outcomes.filter((item) => item.status === "complete").length;
+    const stopped = outcomes.find((item) => !["complete", "cancelled"].includes(item.status));
+    draft.message = stopped ? `${complete} of ${jobs.length} remixes ready. ${stopped.error || "Check the saved Reactor jobs for details."}`
+      : `${complete} ${complete === 1 ? "remix is" : "remixes are"} ready below.`;
+    await refresh({ onlyChanged: true }); remixStatus(draft.message);
+  } catch (error) {
+    if (workspaceResetEpoch !== epoch) return;
+    draft.message = `${error.message} No automatic retry was sent.`; remixStatus(draft.message);
+    try { await refresh({ onlyChanged: true }); } catch { /* Existing jobs remain saved on the server. */ }
+  } finally {
+    activeLocalJobs--;
+    if (workspaceResetEpoch === epoch) { pendingRemixSources.delete(sourceId); renderRemixes(); }
+  }
+}
+$("remix-form").addEventListener("submit", submitRemix);
+$("remix-reconnect").addEventListener("click", loadRemixPresets);
+$("remix-source").addEventListener("change", () => {
+  const draft = remixDraft(); if (draft) { draft.source = $("remix-source").value; renderRemixes(); }
+});
+$("remix-preset").addEventListener("change", () => {
+  const draft = remixDraft(), preset = remixCatalog?.presets.find((item) => item.id === $("remix-preset").value);
+  if (draft && preset) { draft.preset_id = preset.id; draft.prompt = preset.prompt; renderRemixes(); }
+});
+$("remix-prompt").addEventListener("input", () => {
+  const draft = remixDraft(); if (draft) { draft.prompt = $("remix-prompt").value; renderRemixes(); }
+});
+$("remix-result").addEventListener("change", () => { viewedRemixes.set(projectId, $("remix-result").value); renderRemixViewer(); });
 $("artifact-history").addEventListener("toggle", updateArtifactPlayers);
 $("newest-output").addEventListener("click", () => openFinishedOutput(newestFinishedOutput()));
 $("update-app").addEventListener("click", updateApp);
@@ -1248,6 +1602,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault(); seek(player.currentTime + (event.key === "ArrowLeft" ? -1 : 1) / project().media.fps);
   }
 });
+void loadRemixPresets();
 safely(async () => {
   if (!projectId && pendingGenerations.size) projectId = [...pendingGenerations.keys()].at(-1);
   try { await refresh(); restoreUpdateView(); } catch (error) {

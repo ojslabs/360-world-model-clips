@@ -15,6 +15,8 @@ Their distributions retain their own licenses and dependency notices:
 | SciPy | [SciPy license](https://github.com/scipy/scipy/blob/main/LICENSE.txt) |
 | Pillow | [Pillow license](https://github.com/python-pillow/Pillow/blob/main/LICENSE) |
 | ONNX Runtime | [ONNX Runtime license](https://github.com/microsoft/onnxruntime/blob/main/LICENSE) |
+| Reactor SDK 1.5.1 | Apache-2.0, retained in the installed [SDK distribution](https://pypi.org/project/reactor-sdk/1.5.1/) |
+| Reactor browser SDK 3.0.2 and X2 wrapper 1.0.0 | Apache-2.0 and MIT; full bundled notices in [browser notices](ui/assets/reactor-live.NOTICES.txt) |
 | FFmpeg and enabled codec libraries | [FFmpeg licensing](https://ffmpeg.org/legal.html) |
 | Node.js | [Node.js license](https://github.com/nodejs/node/blob/main/LICENSE) |
 
