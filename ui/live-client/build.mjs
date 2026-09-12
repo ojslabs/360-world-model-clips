@@ -36,5 +36,5 @@ const licenses = [
 ];
 const notices = ['Third-party notices for the bundled live client.\nThe bundle and WASM are served locally; no API keys are included.\n'];
 for (const [label, file] of licenses) notices.push(label + '\n\n' + await readFile(path.join(root, file), 'utf8'));
-await writeFile(path.join(assets, 'reactor-live.NOTICES.txt'), notices.join('\n\n')); 
+await writeFile(path.join(assets, 'reactor-live.NOTICES.txt'), notices.join('\n\n'));
 console.log('Built local live client and pinned WASM transport.');
