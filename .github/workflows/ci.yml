@@ -33,5 +33,12 @@ jobs:
           node --check ui/app.js
           node --test test_ui_recovery.js
           python build_ui.py
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Build deployment image
         run: docker build -t world-model-clips:ci .
+      - name: Run protected container with fresh data
+        run: python scripts/container_smoke.py --image world-model-clips:ci
