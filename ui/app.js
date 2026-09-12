@@ -217,24 +217,29 @@ async function pollGeneration(record, options = {}) {
   const now = options.now || Date.now, onStatus = options.onStatus || status;
   const deadline = now() + (options.timeout ?? 20 * 60 * 1000);
   let previousMessage = null;
+  let readCount = 0, consecutiveReadErrors = 0;
   const announce = (message) => { if (message !== previousMessage) { previousMessage = message; onStatus(message); } };
   while (now() < deadline) {
     if (options.isCurrent && !options.isCurrent()) return { status: "cancelled" };
     try {
       const current = await readGeneration(record, request);
+      consecutiveReadErrors = 0;
       if (options.isCurrent && !options.isCurrent()) return { status: "cancelled" };
       if (["complete", "failed", "interrupted"].includes(current.status)) return current;
       announce(current.status === "awaiting_acknowledgement"
         ? "Recovering the existing submission from saved run history. No new generation has been sent."
         : `Your world model clip is ${current.status === "queued" ? "queued" : "processing"}. You can reload this page and tracking will resume.`);
     } catch (error) {
+      consecutiveReadErrors++;
       if (options.isCurrent && !options.isCurrent()) return { status: "cancelled" };
       if (error.status && error.status !== 404 && error.status < 500) {
         return { status: "unresolved", error: "The existing run could not be checked. Its tracking details are saved; refresh the connection to resume." };
       }
       announce("Reconnecting to the server. Your existing run is saved and will be checked again; no new generation has been sent.");
     }
-    await wait(Math.min(3000, Math.max(0, deadline - now())));
+    readCount++;
+    const interval = options.pollInterval ? options.pollInterval({ readCount, consecutiveReadErrors }) : 3000;
+    await wait(Math.min(interval, Math.max(0, deadline - now())));
   }
   return { status: "unresolved", error: "The existing run is still saved. Reload this page or refresh the connection to resume checking it; no new generation has been sent." };
 }
@@ -270,6 +275,7 @@ async function job(path, data, message) {
   status(message);
   const started = await api(path, data);
   const current = await pollGeneration({ job_id: started.job_id }, {
+    pollInterval: localJobPollInterval,
     onStatus: (update) => status(update.startsWith("Reconnecting")
       ? "Reconnecting to check your existing task. It has not been restarted." : message),
   });
@@ -278,6 +284,10 @@ async function job(path, data, message) {
     ? `Could not finish checking job ${started.job_id}. Its saved state can be reviewed; the task was not restarted.`
     : current.error || "The saved task was interrupted before completion. It was not restarted.");
   } finally { activeLocalJobs--; }
+}
+function localJobPollInterval({ readCount, consecutiveReadErrors }) {
+  if (consecutiveReadErrors) return Math.min(3000, 1000 * consecutiveReadErrors);
+  return [250, 250, 500, 500, 1000, 1500, 2000][readCount - 1] ?? 3000;
 }
 async function safely(operation) { try { await operation(); } catch (error) { status(error.message); } }
 function visibleWorkspace(snapshot) {
@@ -1133,7 +1143,7 @@ function playbackCapabilities() {
   } catch { return { av1_mp4: false }; }
 }
 async function importSource(id) {
-  await job("/api/import", { video_id: id, playback_capabilities: playbackCapabilities() }, "Downloading and analyzing video. This can take a few minutes…");
+  await job("/api/import", { video_id: id, playback_capabilities: playbackCapabilities() }, "Preparing your video…");
   projectId = id; activeId = null; await refresh(); status("Video ready. Play it and choose a freeze frame.");
 }
 $("import-seed").addEventListener("click", () => safely(() => importSource(state.seed)));

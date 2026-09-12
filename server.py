@@ -39,6 +39,7 @@ INTERACTIVE_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 SEARCH_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 LABEL_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 JOBS = {}
+SEARCH_CACHE_SECONDS = 600
 
 
 class LabelBusy(ValueError):
@@ -612,8 +613,29 @@ def search(query):
     if query.startswith("https://") or media.VIDEO_ID.fullmatch(query):
         video_id = media.youtube_id(query)
         target = f"https://www.youtube.com/watch?v={video_id}"
+        # A downloaded video's metadata is enough to reopen it by its exact link.
+        if source_path(video_id).is_file():
+            info = media.read_json(folder(video_id) / "source.info.json", {})
+            if info.get("title") and info.get("id", video_id) == video_id:
+                return [{"id": video_id, "title": info["title"],
+                         "channel": info.get("channel", info.get("uploader", "YouTube")),
+                         "duration": info.get("duration"),
+                         "thumbnail": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"}]
     else:
         target = "ytsearch8:" + query
+    cached_path = DATA / "search-cache" / (hashlib.sha256(target.encode()).hexdigest() + ".json")
+    try:
+        cached = media.read_json(cached_path, {})
+        age = time.time() - cached.get("fetched_at", 0)
+        results = cached.get("results")
+        if (cached.get("target") == target and 0 <= age < SEARCH_CACHE_SECONDS
+                and isinstance(results, list) and 0 < len(results) <= 8
+                and all(isinstance(item, dict) and isinstance(item.get("id"), str)
+                        and media.VIDEO_ID.fullmatch(item["id"]) and isinstance(item.get("title"), str)
+                        for item in results)):
+            return results
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
     raw = media.run([TOOLS, "--ignore-config", "--js-runtimes", "node", "--flat-playlist",
                      "--dump-json", "--skip-download", "--socket-timeout", "15", target], timeout=90)
     results = []
@@ -625,6 +647,11 @@ def search(query):
                             "channel": value.get("channel", value.get("uploader", "YouTube")),
                             "duration": value.get("duration"),
                             "thumbnail": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"})
+    if results:
+        try:
+            media.write_json(cached_path, {"target": target, "fetched_at": time.time(), "results": results})
+        except OSError:
+            pass
     return results
 
 

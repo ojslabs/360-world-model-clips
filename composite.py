@@ -266,6 +266,8 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
         graph_parts.append("[original_audio]anull[a]")
     graph = ";".join(graph_parts)
     encoding = ["-crf", "19"]
+    encode_threads = (min(12, os.cpu_count() or 1) if output_size == (3840, 2160)
+                      else media.LOCAL_ENCODE_THREADS)
     if reference_anchored:
         # Identical input pixels need identical intra-frame quantization. Contextual
         # CRF and adaptive quantization can otherwise change only one endpoint.
@@ -275,7 +277,7 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
     args += ["-filter_complex_threads", "2", "-filter_complex", graph,
              "-map", "[v]", "-map", "[a]", "-t", f"{total:.9f}",
              "-c:v", "libx264", "-preset", media.LOCAL_ENCODE_PRESET, *encoding,
-             "-threads", str(media.LOCAL_ENCODE_THREADS),
+             "-threads", str(encode_threads),
              "-c:a", "aac", "-b:a", "192k", "-ar", str(OUTPUT_SAMPLE_RATE),
              "-movflags", "+faststart", temp]
     try:
@@ -306,7 +308,7 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
                         "encode": verify_started - encode_started,
                         "verification": verified_at - verify_started,
                         "total": time.perf_counter() - started},
-            "encoding": {"preset": media.LOCAL_ENCODE_PRESET, "threads": media.LOCAL_ENCODE_THREADS,
+            "encoding": {"preset": media.LOCAL_ENCODE_PRESET, "threads": encode_threads,
                          "qp": 18 if reference_anchored else None, "crf": None if reference_anchored else 19},
             "provider_orbit_seconds": actual_orbit_duration,
             "resolution_provenance": {"output_size": list(output_size),

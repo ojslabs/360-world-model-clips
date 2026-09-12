@@ -841,3 +841,52 @@ test("login return locations cannot become protocol-relative external redirects"
   tracker.redirectToLogin();
   assert.equal(new URL(destinations[0], "https://demo.example").searchParams.get("next"), "/");
 });
+
+function timedLocalJobHarness(read) {
+  const h = harness(), calls = [], waits = []; let now = 0;
+  h.context.testNow = () => now;
+  h.context.testWait = async (milliseconds) => { waits.push(milliseconds); now += milliseconds; };
+  h.context.fetch = async (url, init = {}) => {
+    calls.push([init.method || "GET", url, now]);
+    const result = init.method === "POST" ? { job_id: "quick" } : read(now);
+    return { ok: true, status: 200, json: async () => result };
+  };
+  vm.runInContext("const originalPollGeneration = pollGeneration; pollGeneration = (record, config) => originalPollGeneration(record, { ...config, now: testNow, wait: testWait });", h.context);
+  return { ...h, calls, waits, now: () => now };
+}
+
+test("a one-second local task is shown within 1.5 seconds with one submission", async () => {
+  const h = timedLocalJobHarness((time) => time >= 1000
+    ? { status: "complete", result: { id: "ready-video" } } : { status: "running" });
+  const result = await h.tracker.job("/api/import", { video_id: "source" }, "Preparing your video…");
+  assert.equal(result.id, "ready-video");
+  assert.ok(h.now() >= 1000 && h.now() < 1500);
+  assert.deepEqual(h.waits, [250, 250, 500]);
+  assert.equal(h.calls.filter(([method]) => method === "POST").length, 1);
+});
+
+test("long local tasks and reconnects back off to a three-second maximum without resubmission", async () => {
+  const long = timedLocalJobHarness((time) => time >= 20000 ? { status: "complete", result: {} } : { status: "running" });
+  await long.tracker.job("/api/import", { video_id: "source" }, "Preparing your video…");
+  assert.equal(Math.max(...long.waits), 3000);
+  assert.ok(long.waits.filter((delay) => delay === 3000).length >= 3);
+  assert.equal(long.calls.filter(([method]) => method === "POST").length, 1);
+  let attempts = 0;
+  const reconnect = timedLocalJobHarness(() => {
+    if (++attempts <= 5) throw new TypeError("Server restarting");
+    return { status: "complete", result: {} };
+  });
+  await reconnect.tracker.job("/api/frame", { video_id: "source" }, "Saving this frame…");
+  assert.deepEqual(reconnect.waits, [1000, 2000, 3000, 3000, 3000]);
+  assert.equal(reconnect.calls.filter(([method]) => method === "POST").length, 1);
+});
+
+test("generation polling keeps its existing three-second cadence", async () => {
+  const { tracker } = harness(), delays = []; let time = 0;
+  const result = await tracker.pollGeneration({ job_id: "generation" }, {
+    request: async () => ({ status: time >= 6000 ? "complete" : "running" }),
+    now: () => time, wait: async (milliseconds) => { delays.push(milliseconds); time += milliseconds; }, onStatus: () => {},
+  });
+  assert.equal(result.status, "complete");
+  assert.deepEqual(delays, [3000, 3000]);
+});
