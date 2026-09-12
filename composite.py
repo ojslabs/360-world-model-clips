@@ -122,7 +122,7 @@ def _verify(path, expected_duration, endpoint_frames=None, output_size=None):
                  "-map", "[verify]", "-map", "0:a:0", "-f", "null", "-",
                  "-map", "[selected]", "-an", "-vsync", "0", "-pix_fmt", "rgb24",
                  "-f", "rawvideo", "pipe:1"]
-    samples = media.run(args, timeout=600)
+    samples = media.run(args, timeout=600, strict_errors=True)
     details = {"duration": duration, "width": video["width"], "height": video["height"],
                "fps": OUTPUT_FPS, "video_codec": "h264", "audio_codec": "aac",
                "sample_rate": OUTPUT_SAMPLE_RATE, "bytes": Path(path).stat().st_size,

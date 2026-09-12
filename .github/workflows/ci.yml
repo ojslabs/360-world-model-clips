@@ -27,6 +27,8 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install -r requirements-linux.lock
           python crowd_audio.py --setup-model
+      - name: Verify complete media decoding
+        run: python -m unittest -v test_media.MediaTests.test_strict_verification_rejects_decoder_errors_even_with_exit_zero test_composite.CompositeTests.test_endpoint_verification_still_decodes_video_and_audio_after_the_orbit
       - name: Verify Python and browser behavior
         run: |
           python -m unittest discover -v -p 'test_*.py'

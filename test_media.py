@@ -14,6 +14,13 @@ import server
 
 
 class MediaTests(unittest.TestCase):
+    def test_strict_verification_rejects_decoder_errors_even_with_exit_zero(self):
+        result = subprocess.CompletedProcess([], 0, b"decoded frames", b"[aac] Error decoding frame\n")
+        with patch.object(media.subprocess, "run", return_value=result):
+            self.assertEqual(media.run(["ffmpeg", "-v", "error"]), b"decoded frames")
+            with self.assertRaisesRegex(RuntimeError, "Error decoding frame"):
+                media.run(["ffmpeg", "-v", "error"], strict_errors=True)
+
     def _fake_ffmpeg(self, root, modern):
         binary = root / ("modern-ffmpeg" if modern else "legacy-ffmpeg")
         calls = root / "capability-calls.txt"

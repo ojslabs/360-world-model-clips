@@ -162,8 +162,29 @@ class CompositeTests(unittest.TestCase):
                     position, size = int(packet["pos"]), int(packet["size"])
                     body[position:position + size] = b"\xff" * size
                     broken.write_bytes(body)
-                    with self.assertRaises(RuntimeError):
-                        composite._verify(broken, 19, (240, 419))
+                    execute = media.subprocess.run
+                    calls = []
+                    def capture(*args, **kwargs):
+                        result = execute(*args, **kwargs)
+                        calls.append((args[0], result))
+                        return result
+                    with patch.object(media.subprocess, "run", side_effect=capture):
+                        try:
+                            composite._verify(broken, 19, (240, 419))
+                        except RuntimeError:
+                            continue
+                    # A failing platform reports the exact multi-output command's
+                    # final frame/time and decoder log, distinguishing early EOF
+                    # from a decoder that silently accepts the damaged packet.
+                    command, accepted = calls[-1]
+                    diagnostic = list(command)
+                    diagnostic[diagnostic.index("-v") + 1] = "info"
+                    diagnostic[1:1] = ["-progress", "pipe:2"]
+                    report = execute(diagnostic, capture_output=True, timeout=60)
+                    self.fail(f"Accepted corrupt {kind} packet at {packet['pts_time']}: "
+                              f"exit={accepted.returncode}, stderr={accepted.stderr!r}. "
+                              f"Diagnostic exit={report.returncode}:\n"
+                              + report.stderr.decode(errors="replace")[-6000:])
 
     def test_default_crowd_processing_is_audible_and_keeps_source_audio_timing(self):
         source = self.root / "stereo-atmosphere.mp4"

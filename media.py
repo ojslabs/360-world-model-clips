@@ -73,9 +73,11 @@ def _media_command(args):
     return command
 
 
-def run(args, timeout=300):
+def run(args, timeout=300, *, strict_errors=False):
     result = subprocess.run(_media_command(args), capture_output=True, timeout=timeout)
-    if result.returncode:
+    # Use only with error-level logging. A successful exit must not hide
+    # a reported decoder error.
+    if result.returncode or (strict_errors and result.stderr.strip()):
         detail = result.stderr.decode(errors="replace")[-1800:]
         detail = re.sub(r"https?://\S+", "[remote URL]", detail)
         raise RuntimeError(detail or f"{args[0]} exited {result.returncode}")
