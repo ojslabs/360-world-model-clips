@@ -1,0 +1,27 @@
+{
+  "id": "fal-h3-max-frozen-orbit-v5",
+  "model": "minimax/h3-max/camera-controls",
+  "schema_url": "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=minimax/h3-max/camera-controls",
+  "verified_on": "2026-09-12",
+  "input": {
+    "prompt": "The reference image is one frozen instant. Only the camera moves. Preserve every person and object in exactly the same world position, orientation, shape and pose throughout the shot. Airborne objects remain suspended at the captured height and angle: no wobbling, shaking, spinning, drifting, falling or continued action. Keep faces, hands, clothing, liquids and the background motionless while retaining their natural appearance. Camera parallax is the only source of apparent movement. Follow the supplied camera path smoothly, easing into and out of the move. Start and finish at the original framing and perspective, with unchanged lighting and focal length. No cuts, zoom, morphing or added objects.",
+    "prompt_expansion_mode": "balanced",
+    "duration": 6,
+    "resolution": "1080P",
+    "enable_safety_checker": true,
+    "sync_mode": false,
+    "camera_trajectory": [
+      {"time": 0, "azimuth": 0, "elevation": 0, "distance": 1},
+      {"time": 0.03333333333333333, "azimuth": 0, "elevation": 0, "distance": 1},
+      {"time": 0.1395833333333333, "azimuth": 15.46875, "elevation": 0, "distance": 1},
+      {"time": 0.24583333333333332, "azimuth": 56.25, "elevation": 0, "distance": 1},
+      {"time": 0.3520833333333333, "azimuth": 113.90625, "elevation": 0, "distance": 1},
+      {"time": 0.4583333333333333, "azimuth": 180, "elevation": 0, "distance": 1},
+      {"time": 0.5645833333333333, "azimuth": 246.09375, "elevation": 0, "distance": 1},
+      {"time": 0.6708333333333333, "azimuth": 303.75, "elevation": 0, "distance": 1},
+      {"time": 0.7770833333333332, "azimuth": 344.53125, "elevation": 0, "distance": 1},
+      {"time": 0.8833333333333333, "azimuth": 360, "elevation": 0, "distance": 1}
+    ]
+  },
+  "delivery": {"anchor_reference": true, "transition": "cut", "resume_next_frame": true}
+}

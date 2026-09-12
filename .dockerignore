@@ -1,0 +1,14 @@
+.git
+.venv
+.runtime
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+node_modules
+ui/out
+*.mp4
+*.mkv
+*.wav
+*.onnx

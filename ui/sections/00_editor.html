@@ -1,0 +1,107 @@
+<div class="paper studio">
+  <header class="studio-head">
+    <a class="wordmark" href="/">360° World Model Clips<span class="orbit-mark" aria-hidden="true">◌</span></a>
+    <nav class="workspace-nav" aria-label="Workspace"><a href="#source-heading">Source</a><a href="#frame-heading">Frame</a><a href="#outputs">Result</a></nav>
+    <span id="format-summary" class="quiet"></span>
+  </header>
+  <div id="app-update-notice" class="app-update-notice" role="status" hidden><span>A new app version is ready.</span><button id="update-app" class="secondary" type="button">Update app</button></div>
+  <main>
+    <section class="source-section" aria-labelledby="source-heading">
+      <div class="section-row"><h1 id="source-heading">1. Choose a video</h1></div>
+      <form id="search-form" class="search-bar">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg>
+        <label class="sr-only" for="search">Search YouTube or paste a video link</label>
+        <input id="search" name="query" type="search" placeholder="Find a video" required>
+        <button type="submit" id="search-button">Search</button>
+      </form>
+      <div id="search-results" class="search-results" hidden></div>
+      <div class="source-switch"><label for="source-select">Your library</label><select id="source-select"></select></div>
+    </section>
+    <section class="edit-section" aria-labelledby="frame-heading">
+      <div class="section-row"><h2 id="frame-heading">2. Pick the freeze frame</h2></div>
+      <div class="source-heading-row"><h3 id="video-title">Your reference video</h3><span id="source-original-resolution" class="quiet"></span></div>
+      <details class="compact-details source-inspection"><summary>Source details</summary><div class="details-body source-quality"><span id="source-detail" class="quiet"></span><span id="source-preview-resolution" hidden></span><a id="source-original-link" download>Download original ↓</a><span id="source-quality-note"></span><button id="import-seed" class="secondary" hidden>Load original football reference</button></div></details>
+      <div class="editor-grid">
+        <div class="viewer-column">
+          <div class="video-stage"><video id="player" controls playsinline preload="metadata"></video><img id="freeze-preview" alt="The extracted source frame selected for generation" hidden><div id="source-playback-status" class="source-playback-status" role="status" hidden></div></div>
+          <div class="viewer-caption"><div class="moment-title"><span id="clip-title">Choose a moment.</span><span id="clip-detection" class="quiet" hidden></span></div><output id="timecode">00:00.000</output></div>
+          <div id="moment-picker" class="moment-picker"><label for="moment-select">Jump to a suggested moment</label><select id="moment-select" disabled></select></div>
+          <div class="scrub-controls">
+            <label class="sr-only" for="scrub">Move through the source video</label>
+            <input type="range" id="scrub" min="0" max="1" value="0" step="0.033333" disabled>
+            <div class="scrub-row"><button id="step-back" class="secondary" disabled>← 1 frame</button><button id="play-cut" class="secondary" disabled>Play moment</button><button id="step-forward" class="secondary" disabled>1 frame →</button><button id="set-frame" disabled>Use this frame</button></div>
+          </div>
+          <p id="frame-detail" class="quiet">Pause on the moment you want to use.</p>
+        </div>
+      </div>
+      <details id="cutups-details" class="compact-details cutups-details"><summary>Suggested moments and batch selection <span id="candidate-count" class="quiet">0</span></summary><div class="details-body">
+        <div class="panel-head"><h3>Suggested moments</h3><button id="analyze" class="text-button">Analyze again</button></div>
+        <div class="wave-wrap"><canvas id="waveform" height="68" aria-label="Source audio activity and current position"></canvas></div>
+        <div class="cue-box"><p id="cue-text"></p><span id="cue-kind" class="quiet"></span></div>
+        <div id="candidates" class="candidate-list"><p class="empty">Import a video to find candidate moments.</p></div>
+      </div></details>
+    </section>
+    <section class="selection-section" aria-labelledby="selection-heading">
+      <div class="section-row"><h2 id="selection-heading">3. Generate and review</h2></div>
+      <div class="generation-detail">
+        <div class="generation-action"><div><p id="generation-frame">Save a freeze frame to continue.</p><p id="timing-summary" class="quiet"></p><p id="selection-audio" class="quiet" hidden></p></div><button id="generate" title="Uses model credits" disabled>Generate with world models</button></div>
+        <select id="tail" aria-label="Source continuation length" hidden></select>
+        <details class="compact-details connection-details" hidden><summary>Connection</summary><div class="details-body"><p id="generation-message"></p><button id="generation-check" class="secondary">Refresh connection</button></div></details>
+      </div>
+      <div class="finished-outputs" id="outputs">
+        <div class="section-row"><h3>Result</h3><span id="output-count" class="quiet"></span></div>
+        <button id="newest-output" class="secondary newest-output" type="button" hidden></button>
+        <div id="output-run-status" class="output-run-status" hidden></div>
+        <div id="finished-videos">
+          <p id="output-empty" class="empty">Your finished highlight will appear here automatically.</p>
+          <div id="output-workbench" hidden>
+            <div class="output-picker-row">
+              <div class="output-picker-field"><label for="output-picker">Choose a result</label><select id="output-picker" aria-describedby="output-summary"></select></div>
+              <div class="output-navigation"><button id="output-prev" class="secondary" type="button" aria-label="Previous finished highlight">←</button><button id="output-next" class="secondary" type="button" aria-label="Next finished highlight">→</button></div>
+            </div>
+            <div class="finished-output">
+              <video id="output-player" controls playsinline preload="metadata" aria-label="Selected finished highlight"></video>
+              <div class="output-heading-row"><h4 id="output-title"></h4><div class="result-actions"><button id="rerun-output" class="secondary" title="Uses model credits" type="button" disabled>Rerun this frame</button><a id="output-download" class="download-highlight" download>Download ↓</a></div></div>
+              <p id="output-summary" class="output-summary"></p>
+              <p id="output-resolution" class="quiet" hidden></p>
+              <p id="output-quality" class="quiet" hidden></p>
+              <details class="compact-details output-inspection"><summary>Edit details and original files</summary><div class="details-body">
+                <p id="output-return" class="quiet"></p><p id="output-transition" class="quiet" hidden></p><p id="output-audio" class="quiet"></p>
+                <div class="output-links"><a id="output-orbit" target="_blank" rel="noopener">Generated clip ↗</a><a id="output-generated" target="_blank" rel="noopener" hidden>Original generation ↗</a><a id="output-previous" target="_blank" rel="noopener" hidden>Previous edit ↗</a><a id="output-source" target="_blank" rel="noopener">Original source ↗</a></div>
+              </div></details>
+            </div>
+            <details class="compact-details reel-builder"><summary>Combine results into a reel</summary><div class="details-body">
+              <div class="section-row"><p id="reel-selection-summary" class="quiet"></p><button id="combine-finished" class="secondary" disabled>Download combined highlights</button></div>
+              <div id="output-includes" class="output-includes"></div>
+              <div id="output-reels"></div>
+            </div></details>
+          </div>
+        </div>
+      </div>
+      <details class="compact-details source-exports" hidden><summary>Batch source exports <span id="selected-count" class="quiet">0</span></summary><div class="details-body">
+        <span id="selection-duration" class="quiet"></span><div id="selected-list" class="selected-list"></div>
+        <div class="export-row"><label class="check-label"><input type="checkbox" id="combined" checked> Include a combined source reel</label><button id="export" class="secondary" disabled>Download source clips ↓</button></div>
+      </div></details>
+      <details id="artifact-history" class="artifact-history">
+        <summary>History and downloads <span id="artifact-count" class="quiet"></span></summary>
+        <div class="artifact-history-body"><h4>Generated clips</h4><div id="generations"></div><h4>Source downloads</h4><div id="exports" class="exports"></div></div>
+      </details>
+    </section>
+  </main>
+  <dialog id="search-preview" class="search-preview-dialog" aria-labelledby="search-preview-title">
+    <div class="preview-heading"><h3 id="search-preview-title"></h3><button id="search-preview-close" class="secondary" type="button" aria-label="Close video preview">Close</button></div>
+    <div id="search-preview-stage"><iframe id="search-preview-player" title="YouTube video preview" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+    <video id="search-preview-local" controls playsinline preload="metadata" aria-label="Imported video preview" hidden></video>
+    <p id="search-preview-message" class="quiet"></p>
+    <div class="preview-actions"><a id="search-preview-external" target="_blank" rel="noopener">Open on YouTube ↗</a><button id="search-preview-import" type="button">Import this video</button></div>
+  </dialog>
+  <aside id="activity-panel" class="activity-panel" aria-label="Workspace activity">
+    <button id="activity-toggle" class="secondary activity-toggle" type="button" aria-expanded="false" aria-controls="activity-jobs"><span class="activity-indicator" aria-hidden="true"></span><span id="activity-title">Activity</span><span id="activity-count" class="quiet">Ready</span><span id="activity-chevron" aria-hidden="true">⌃</span></button>
+    <div id="activity-jobs" class="activity-jobs" hidden></div>
+    <p id="activity-connection" class="activity-connection" role="status" hidden>Reconnecting to the server…</p>
+    <span id="activity-announcement" class="sr-only" role="status" aria-live="polite"></span>
+  </aside>
+  <div id="status" role="status" aria-live="polite">Loading your workspace…</div>
+  <footer class="studio-footer"><span>Workspace · OJS Labs</span></footer>
+</div>
+<script src="/app.js" defer></script>

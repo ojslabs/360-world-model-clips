@@ -1,0 +1,37 @@
+name: Verify app and container
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install media tools and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements-linux.lock
+          python crowd_audio.py --setup-model
+      - name: Verify Python and browser behavior
+        run: |
+          python -m unittest discover -v -p 'test_*.py'
+          node --check ui/app.js
+          node --test test_ui_recovery.js
+          python build_ui.py
+      - name: Build deployment image
+        run: docker build -t world-model-clips:ci .
