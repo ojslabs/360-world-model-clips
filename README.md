@@ -3,9 +3,9 @@
 Turn a moment from a video into a camera orbit, then return to the original action.
 Choose a frame, choose a path and download the finished edit.
 
-**[Download ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip)** ·
-[Quick start](#quick-start) · [How it works](docs/how-it-works.md) ·
-[Setup and Docker](docs/setup.md) · [MIT license](LICENSE)
+**[Quick start](#quick-start)** · [How it works](docs/how-it-works.md) ·
+[Setup](docs/setup.md) · [Download source ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip) ·
+[MIT license](LICENSE)
 
 ![A generated camera orbit around a bicycle rider above an F1 car](docs/assets/f1-orbit.gif)
 
@@ -14,25 +14,26 @@ An Around example from a saved F1 edit. Preview: 640 × 360; generation: 1080P.
 
 ## Quick start
 
-You need **Python 3.12**, **Node.js 22+**, **FFmpeg with FFprobe**, and your own
-**Fal API key** for generation. [Install prerequisites](docs/setup.md#prerequisites).
-Reactor is optional and uses a separate key. Provider usage is paid through your
-accounts; no credits are included.
-
-**[Download the ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip)**,
-extract it and open the extracted folder in your terminal. Run:
+Install and start **[Docker Desktop on macOS](https://docs.docker.com/desktop/setup/install/mac-install/)**
+or **[Docker Engine on Linux](https://docs.docker.com/engine/install/)** first.
+With Docker running, paste this into Bash:
 
 ```sh
-python3.12 bootstrap.py --run
+curl -fsSL https://raw.githubusercontent.com/ojslabs/360-world-model-clips/main/scripts/install.sh | bash
 ```
 
-This installs pinned dependencies, checks the media tools, builds the UI and
-starts the app. [Git clone, Linux and Docker options](docs/setup.md).
+The installer downloads the app and builds its Python 3.12, Node.js, FFmpeg and
+speech-model environment inside Docker. The first launch can take several minutes.
+[Read the installer](scripts/install.sh) · [Setup and native ZIP option](docs/setup.md)
 
-Open **<http://127.0.0.1:8476>**, paste your key into **Your Fal account** and
-click **Connect Fal**. Keys stay in server memory for your browser connection,
-for up to eight hours. Disconnect, expiry or a restart clears the connection.
-[Credentials and privacy](docs/setup.md#run-locally).
+When ready, it prints **<http://localhost:8476>** and an **access code**. Open that
+address, sign in with the code, then paste your own key into **Your Fal account**
+and click **Connect Fal**. Generation uses your paid Fal account; optional Reactor
+remixes use a separate account. No provider credits are included.
+
+Keys stay in server memory for your browser connection, for up to eight hours.
+Disconnect, expiry or a restart clears the connection.
+[Credentials and privacy](docs/setup.md#credentials).
 
 ## Make an edit
 

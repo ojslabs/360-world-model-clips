@@ -44,3 +44,15 @@ jobs:
         run: docker build -t world-model-clips:ci .
       - name: Run protected container with fresh data
         run: python scripts/container_smoke.py --image world-model-clips:ci
+  fresh-install:
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Download and run the public installer without host language or media tools
+        run: python3 -m scripts.install_smoke --ref "$GITHUB_SHA"

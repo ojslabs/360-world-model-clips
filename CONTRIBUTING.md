@@ -5,7 +5,12 @@ includes the step that failed, what you expected, your operating system and the
 error shown in the app. Share only footage you can make public, and remove keys
 and private account details from logs or screenshots.
 
+To run the app with its tools inside Docker, use the [one-command install](README.md#quick-start).
+The following native checkout is for changing and testing code.
+
 ## Get the code
+
+Install the [native prerequisites](docs/setup.md#prerequisites) first.
 
 ```sh
 git clone --depth 1 https://github.com/ojslabs/360-world-model-clips.git
@@ -16,7 +21,7 @@ python3.12 bootstrap.py --run
 The shallow clone contains all current files. Run `git fetch --unshallow` if you
 later need the full commit history. For a copy without Git, use
 [Download ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip).
-See [setup](docs/setup.md) for prerequisites, setup without starting the app and Docker.
+See [setup](docs/setup.md) for setup without starting the app and manual Docker builds.
 
 ## Find the part you want to change
 
@@ -47,9 +52,11 @@ node --check ui/app.js
 .venv/bin/python -m scripts.build_ui
 ```
 
-The tests mock Fal and Reactor calls. Media checks use local fixtures and need
-FFmpeg, including its 4K encoder support. Real generation is a separate, explicit
-test charged to the connected provider account.
+Provider tests mock Fal and Reactor responses. Media checks run real FFmpeg
+against local fixtures, including 4K output. Browser and container checks test
+controls, startup and HTTP authentication. These checks make no paid provider
+requests. Live model quality needs a separate, explicit test charged to the
+connected provider account. See [tests/README.md](tests/README.md).
 
 Keep changes focused and explain what changed and how you checked it in the pull
 request. Read [AGENTS.md](AGENTS.md) for frame, audio, credential and recovery

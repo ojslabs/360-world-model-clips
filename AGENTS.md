@@ -10,6 +10,13 @@ checkout root. Moving a module must never relocate `.runtime`, `.env.local`,
 `ui/` or the provider preset. Keep root `server.py` and `bootstrap.py` as the
 documented entry points. Product behavior is recorded in [the brief](docs/BRIEF.md).
 
+- `scripts/install.sh` owns the primary Docker-backed installation. It requires
+  Docker already installed and running; do not claim it installs Docker, supports
+  untested platforms or makes native Python/Node/FFmpeg unnecessary outside that
+  container. Download source without changing unrelated checkouts, preserve owned
+  data volumes, and report readiness only after HTTP checks pass. The installer
+  must not preload provider keys or make paid model requests. Keep native
+  `bootstrap.py --run` available as the secondary setup path.
 - `config/orbit_preset.json` owns the Fal model, fixed prompt and original Around path.
   `app/orbit_paths.py` derives the Around / Over & under / Diagonal choices. Keep
   duration, resolution and distance consistent with the base preset. Describe
@@ -76,6 +83,9 @@ documented entry points. Product behavior is recorded in [the brief](docs/BRIEF.
   `node --test ui/live-client/test_controller.mjs`, `python -m scripts.doctor --model`, and
   `python -m scripts.build_ui`. Inspect decoded media for picture/audio changes.
   Focused camera geometry: `python -m unittest -v tests.python.test_orbit_paths`.
+  Distinguish mocked provider responses, real local FFmpeg fixtures, browser
+  workflows and clean-container installation tests when reporting verification.
+  None of these alone verifies a paid model's output or every host platform.
 
 Keep docs limited to built behavior. Record material limits and test results
 plainly. Do not add provider credentials or private user history to examples.

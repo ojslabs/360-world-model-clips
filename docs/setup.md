@@ -3,7 +3,63 @@
 The [README](../README.md) walks through the edit and shows a saved F1 example.
 These instructions cover installation, credentials and the optional services.
 
-## Prerequisites
+## Install with Docker
+
+Install and start [Docker Desktop on macOS](https://docs.docker.com/desktop/setup/install/mac-install/)
+or [Docker Engine on Linux](https://docs.docker.com/engine/install/). You need a
+Bash terminal, `curl`, `tar`, `gzip`, an internet connection and permission to use the
+running Docker engine. The app installer does not install Docker itself.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ojslabs/360-world-model-clips/main/scripts/install.sh | bash
+```
+
+[Read scripts/install.sh](../scripts/install.sh) before running it if you want to
+inspect the steps. It downloads the repository and builds a container with
+Python 3.12, Node.js, FFmpeg/FFprobe, pinned Python dependencies and the verified
+speech model. You do not need those tools or Git installed on the host. The
+first build downloads its dependencies and can take several minutes.
+
+The installer waits for the app to become ready, then prints
+**http://localhost:8476** and an **Access code**. It also opens the page when a
+browser launcher is available. Sign in at that exact address with the code. Provider key fields start blank. Installation makes no paid
+Fal or Reactor request; connect your own keys inside the app when you want to
+generate or remix.
+
+The default installation directory is `~/.local/share/360-world-model-clips`.
+It contains the source files and a private `config.env` with the local access
+code and browser origin. Sources, jobs and outputs live in the named Docker
+volume `world-model-clips-data`. The container is `world-model-clips` and its
+image is `world-model-clips:installed`.
+
+Rerunning the same install command reuses the owned installation and starts its
+container if stopped. It preserves the data and does not automatically upgrade
+an existing installation. The script rejects a directory it does not own.
+For a later start or stop:
+
+```sh
+docker start world-model-clips
+docker stop world-model-clips
+```
+
+Keep the data volume when stopping or replacing a container. The installer does
+not remove it. For a custom installation, download the script and pass these
+options to Bash:
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `--install-dir PATH` | `~/.local/share/360-world-model-clips` | Source and private local configuration |
+| `--port NUMBER` | `8476` | Browser port on localhost |
+| `--name NAME` | `world-model-clips` | Container name and prefix for its image and volume |
+| `--ref REF` | `main` | `main` or a full 40-character commit SHA for a new installation |
+| `--no-open` | Off | Print the address without opening a browser |
+
+Reuse the same options when starting an existing installation. Native development
+and manual/shared Docker deployment are described below.
+
+## Native setup
+
+### Prerequisites
 
 Use Python 3.12, Node.js 22 or newer, FFmpeg and FFprobe. FFmpeg needs `libdav1d`,
 `libx264` and `zscale`; `scripts/doctor.py` checks them. Generation requires your
@@ -21,7 +77,7 @@ distribution's package manager. FFmpeg builds vary; `scripts/doctor.py` must pas
 before importing AV1 sources. [Docker](#docker) is another option if your
 packages lack the required codecs.
 
-## Get the files
+### Get the files
 
 [Download the ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip),
 extract it and open the extracted folder in your terminal. It contains the source
@@ -37,7 +93,7 @@ cd 360-world-model-clips
 The shallow clone includes all current files. Run `git fetch --unshallow` later
 if you need the full history for development.
 
-## Run locally
+### Run locally
 
 From the extracted folder or checkout:
 
@@ -57,8 +113,12 @@ again after setup:
 .venv/bin/python server.py
 ```
 
-Open <http://127.0.0.1:8476>. In **Your Fal account**, paste your own key and click
-**Connect Fal**. The field starts blank. Import and review work locally;
+Open <http://127.0.0.1:8476> for this native setup.
+
+## Credentials
+
+In **Your Fal account**, paste your own key and click **Connect Fal**. The field
+starts blank. Import and review work locally;
 generating an orbit and requesting a visual action label use your Fal account.
 
 The browser sends the key to this app's server, which holds it only in memory.
@@ -176,6 +236,9 @@ method separately from earlier crowd and source-specific edits.
 
 ## Docker
 
+For manual builds and shared hosting, use the commands below. The installer
+above handles local source download, configuration, build and startup for you.
+
 The Dockerfile installs Python 3.12, Node.js 24, FFmpeg with fast AV1 decoding, pinned
 Python dependencies and the verified speech model. Model/tool files live outside
 the writable `/data` volume. It runs as a non-root user.
@@ -248,8 +311,12 @@ node --test ui/live-client/test_controller.mjs
 .venv/bin/python -m scripts.build_ui
 ```
 
-Tests use local fixtures and mocked provider calls, without paid Fal or Reactor requests.
-Real media tests need the listed tools and include 4K encoding.
+Provider tests use mocked responses and make no paid Fal or Reactor requests.
+Media tests use real FFmpeg with local fixtures, including 4K encoding. Browser
+and container checks exercise the app's controls and HTTP boundaries; they do
+not establish the visual quality or availability of a live provider model.
+See the [test guide](../tests/README.md) and [CI workflow](../.github/workflows/ci.yml)
+for the current checks.
 For just the camera geometry and selection checks, run
 `.venv/bin/python -m unittest -v tests.python.test_orbit_paths` and
 `node --test tests/js/test_ui_orbit_paths.js`. These checks validate requested positions

@@ -53,6 +53,7 @@ def verify_http(port, password):
     state = json.loads(body)
     assert state["projects"] == [] and state["jobs"] == [], "Fresh data must start empty."
     assert not state["generation"].get("configured"), "Container smoke must not have a Fal key."
+    assert not state["fal_credentials"]["configured"] and not state["reactor_credentials"]["configured"], "Both provider connections must start empty."
     status, _, body = request("GET", "/", headers={"Cookie": cookie})
     assert status == 200 and b'football-edits-build' in body, "The built editor must load after sign-in."
 
