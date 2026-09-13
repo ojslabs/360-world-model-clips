@@ -10,14 +10,13 @@ and private account details from logs or screenshots.
 ```sh
 git clone --depth 1 https://github.com/ojslabs/360-world-model-clips.git
 cd 360-world-model-clips
-python3.12 bootstrap.py
-.venv/bin/python server.py
+python3.12 bootstrap.py --run
 ```
 
 The shallow clone contains all current files. Run `git fetch --unshallow` if you
 later need the full commit history. For a copy without Git, use
 [Download ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip).
-See [setup](docs/setup.md) for prerequisites and Docker.
+See [setup](docs/setup.md) for prerequisites, setup without starting the app and Docker.
 
 ## Find the part you want to change
 

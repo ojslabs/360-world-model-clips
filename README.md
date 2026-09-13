@@ -15,22 +15,19 @@ An Around example from a saved F1 edit. Preview: 640 × 360; generation: 1080P.
 ## Quick start
 
 You need **Python 3.12**, **Node.js 22+**, **FFmpeg with FFprobe**, and your own
-**Fal API key** for generation. Reactor is optional and uses a separate key.
-Provider usage is paid through your accounts; no credits are included.
+**Fal API key** for generation. [Install prerequisites](docs/setup.md#prerequisites).
+Reactor is optional and uses a separate key. Provider usage is paid through your
+accounts; no credits are included.
 
-On macOS with Homebrew:
+**[Download the ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip)**,
+extract it and open the extracted folder in your terminal. Run:
 
 ```sh
-brew install python@3.12 ffmpeg node
-git clone --depth 1 https://github.com/ojslabs/360-world-model-clips.git
-cd 360-world-model-clips
-python3.12 bootstrap.py
-.venv/bin/python server.py
+python3.12 bootstrap.py --run
 ```
 
-Downloaded the ZIP? Open its extracted folder and run the last two commands.
-Bootstrap installs pinned dependencies, verifies the media tools and builds the UI.
-[Linux, Docker and shared hosting](docs/setup.md).
+This installs pinned dependencies, checks the media tools, builds the UI and
+starts the app. [Git clone, Linux and Docker options](docs/setup.md).
 
 Open **<http://127.0.0.1:8476>**, paste your key into **Your Fal account** and
 click **Connect Fal**. Keys stay in server memory for your browser connection,
@@ -39,9 +36,25 @@ for up to eight hours. Disconnect, expiry or a restart clears the connection.
 
 ## Make an edit
 
-1. Search for a YouTube video or paste its link. Preview it, then import it.
-2. Scrub to your moment, step forwards or backwards and click **Use this frame**.
-3. Choose a path, click **Generate**, then review and download the result in Outputs.
+### 1. Pick a video
+
+Search or paste a YouTube link, preview the video, then import it.
+
+![The selected F1 video open in the preview dialog](docs/assets/pick-video.jpg)
+
+### 2. Save the frame
+
+Scrub to your moment, step forwards or backwards and click **Use this frame**.
+
+![The populated F1 source player with frame selection controls](docs/assets/pick-frame.jpg)
+
+### 3. Generate and download
+
+Choose a path, generate the edit, then review and download it in Outputs.
+
+![A completed F1 edit in Outputs with its download control](docs/assets/review-edit.jpg)
+
+The output shown is an earlier 18-second F1 edit. New edits use:
 
 | Before | Orbit | After |
 | --- | --- | --- |

@@ -5,6 +5,23 @@ camera-path planes. It is a schematic, not a generated result. The F1 previews
 below use the original Around path; there are no generated Over & under or
 Diagonal examples in this documentation yet.
 
+## Editor walkthrough
+
+These screenshots show the running editor populated with the saved F1 example
+below. They were captured in Chrome from a separate copy of that project, with
+no provider key connected and no new generation. The controls and video are the
+actual interface; each image is cropped to the step it explains.
+
+| Screenshot | What it shows |
+| --- | --- |
+| [pick-video.jpg](pick-video.jpg) | The selected video open in the preview dialog |
+| [pick-frame.jpg](pick-frame.jpg) | The saved source frame at 9:46.36, with scrubber and frame controls |
+| [review-edit.jpg](review-edit.jpg) | Move choices and the completed 18-second edit, paused during its orbit |
+
+The screenshots are reduced JPEG captures for the README. Existing edits retain
+their original timing, so this result shows an 8-second lead and 4-second tail;
+the generation controls show the current 4-second lead and up-to-10-second tail.
+
 ## F1 example
 
 The README previews come from a previously completed 18-second edit of Red Bull's
@@ -33,8 +50,8 @@ well as camera motion; the local endpoint check does not verify pose preservatio
 throughout the orbit. No new model request was made to create these previews.
 
 The original video, native provider files, full exports and runtime receipts are
-not included. Only these two reduced documentation assets were selected for
-publication. The underlying footage and visible marks belong to their respective
+not included. Only the reduced previews and editor screenshots listed here were
+selected for publication. The underlying footage and visible marks belong to their respective
 rights holders; the repository's MIT code license does not grant rights to that
 third-party material. This is an independent software demonstration, with no
 claim of endorsement by Red Bull, Formula 1 or Fal.

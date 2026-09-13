@@ -3,21 +3,55 @@
 The [README](../README.md) walks through the edit and shows a saved F1 example.
 These instructions cover installation, credentials and the optional services.
 
-## Run locally
+## Prerequisites
 
-Use Python 3.12, Node.js 22 or newer, FFmpeg and FFprobe. FFmpeg needs `libdav1d`, `libx264`
-and `zscale`; `scripts/doctor.py` checks them. On macOS with Homebrew:
+Use Python 3.12, Node.js 22 or newer, FFmpeg and FFprobe. FFmpeg needs `libdav1d`,
+`libx264` and `zscale`; `scripts/doctor.py` checks them. Generation requires your
+own Fal key. Live and saved Reactor remixes use a separate, optional Reactor key.
+Provider accounts and usage are your own; no credits are included.
+
+On macOS with Homebrew:
 
 ```sh
 brew install python@3.12 ffmpeg node
-python3.12 bootstrap.py
+```
+
+On Linux, install Python 3.12, Node.js 22 or newer, FFmpeg and FFprobe with your
+distribution's package manager. FFmpeg builds vary; `scripts/doctor.py` must pass
+before importing AV1 sources. [Docker](#docker) is another option if your
+packages lack the required codecs.
+
+## Get the files
+
+[Download the ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip),
+extract it and open the extracted folder in your terminal. It contains the source
+and documentation, with the dependencies installed by bootstrap.
+
+For a Git checkout instead:
+
+```sh
+git clone --depth 1 https://github.com/ojslabs/360-world-model-clips.git
+cd 360-world-model-clips
+```
+
+The shallow clone includes all current files. Run `git fetch --unshallow` later
+if you need the full history for development.
+
+## Run locally
+
+From the extracted folder or checkout:
+
+```sh
+python3.12 bootstrap.py --run
 ```
 
 Bootstrap creates `.venv`, installs pinned dependencies, downloads and verifies
-the pinned Silero speech model, and builds the included HTML interface. No sibling
-repository, commercial font or JavaScript bundler is needed.
+the pinned Silero speech model, and builds the included HTML interface. With
+`--run`, it starts the server after setup succeeds. No sibling repository,
+commercial font or JavaScript bundler is needed.
 
-Start the server:
+For setup only, run `python3.12 bootstrap.py` without `--run`. To start the app
+again after setup:
 
 ```sh
 .venv/bin/python server.py
@@ -45,11 +79,6 @@ On a shared host, this means trusting its operator with your key while connected
 Run your own copy if you prefer to keep that boundary on your computer. The repo
 includes small [F1 documentation previews](assets/README.md), with separate
 attribution. It includes no provider credits or full source recordings.
-
-On Linux, install Python 3.12, Node.js 22 or newer, FFmpeg and FFprobe with your
-distribution's package manager, then run the same bootstrap and server commands.
-FFmpeg builds vary; `scripts/doctor.py` must pass before importing AV1 sources. Docker is
-another option if your distribution's packages lack the required codecs.
 
 ## Use
 

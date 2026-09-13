@@ -17,8 +17,10 @@ documented entry points. Product behavior is recorded in [the brief](docs/BRIEF.
   motion or pole orientation. Never replace a saved run's path during recovery.
 - Never commit credentials, `.env.local`, model weights, source videos, generated
   media or runtime receipts. Keep persistent state under `FOOTBALL_DATA_DIR`.
-  The explicitly approved documentation exceptions are `docs/assets/f1-orbit.gif`
-  and `docs/assets/f1-sequence.jpg`, with attribution in `docs/assets/README.md`.
+  The explicitly approved documentation exceptions are `docs/assets/f1-orbit.gif`,
+  `docs/assets/f1-sequence.jpg`, and the editor screenshots `pick-video.jpg`,
+  `pick-frame.jpg` and `review-edit.jpg` in that same directory. Attribution lives
+  in `docs/assets/README.md`.
   Keep raw source recordings and full generated exports out of Git.
 - Bind every browser-paid Fal call, including visual labels, to its ephemeral
   credential. Capture it in the worker and persist only its owner fingerprint in
