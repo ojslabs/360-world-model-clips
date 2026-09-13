@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import importlib.util
 import os
 import threading
@@ -17,6 +18,8 @@ ROOT = Path(__file__).resolve().parent
 BASE_URL = "https://api.reactor.inc"
 FAST_H3 = "reactor/fast-h3"
 LOCK = threading.RLock()
+ENV_CREDENTIAL = object()
+MAX_RESPONSE_BYTES = 1024 * 1024
 
 
 class ReactorError(RuntimeError):
@@ -46,6 +49,20 @@ def api_key():
     return value
 
 
+def resolve_key(credential_key=ENV_CREDENTIAL):
+    if credential_key is ENV_CREDENTIAL:
+        return api_key()
+    if (not isinstance(credential_key, str) or not 8 <= len(credential_key) <= 512
+            or not credential_key.startswith("rk_")
+            or any(ord(char) < 33 or ord(char) > 126 for char in credential_key)):
+        raise ReactorError("Connect your Reactor API key before remixing.")
+    return credential_key
+
+
+def credential_fingerprint(key):
+    return hashlib.sha256(("reactor-browser-v1\0" + key).encode()).hexdigest()
+
+
 def request(path, data=None, key=None):
     headers = {"Accept": "application/json", "User-Agent": "Football-Edits/1.0"}
     if key:
@@ -56,8 +73,11 @@ def request(path, data=None, key=None):
         headers["Content-Type"] = "application/json"
     req = Request(BASE_URL + path, data=payload, headers=headers)
     try:
-        with build_opener(NoRedirect()).open(req, timeout=30) as response:
-            value = json.load(response)
+        with build_opener(NoRedirect()).open(req, timeout=10) as response:
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise ReactorError("Reactor returned an oversized response.")
+        value = json.loads(raw)
     except HTTPError as error:
         # Never return raw upstream bodies, request headers, keys or JWTs to the UI.
         if error.code in (401, 403):
@@ -72,7 +92,9 @@ def request(path, data=None, key=None):
     return value
 
 
-def mint_token(model=FAST_H3, session_id=None, *, expires_after=900, max_session_duration_seconds=600):
+def mint_token(model=FAST_H3, session_id=None, *, expires_after=900, max_session_duration_seconds=600,
+               credential_key=ENV_CREDENTIAL):
+    key = resolve_key(credential_key)
     resources = {"models": {"match": [model]}}
     if session_id:
         resources["sessions"] = {"bind": [session_id]}
@@ -82,7 +104,7 @@ def mint_token(model=FAST_H3, session_id=None, *, expires_after=900, max_session
             "type": "session", "resources": resources,
             "constraints": {"max_sessions": 1, "max_session_duration_seconds": max_session_duration_seconds},
         }],
-    }, key=api_key())
+    }, key=key)
     if not isinstance(value.get("jwt"), str) or not value["jwt"]:
         raise ReactorError("Reactor did not return a session token.")
     return value

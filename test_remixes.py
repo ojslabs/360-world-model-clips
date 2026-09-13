@@ -3,12 +3,14 @@ import copy
 import io
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import media
 import reactor_api
+import reactor_credentials
 import reactor_remix
 import remix_catalog
 import server
@@ -31,9 +33,12 @@ class RemixTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.queue = Queue()
+        key = "rk_test_only_never_valid"
+        self.credential = reactor_credentials.Credential(key, reactor_api.credential_fingerprint(key), time.time() + 3600, True)
+        self.cookie = reactor_credentials.cookie_header("T" * 43)
         replacements = [patch.object(server, "DATA", self.root), patch.object(server, "JOBS", {}),
                         patch.object(server, "generation_status", return_value={"ready": True, "configured": True}),
-                        patch.object(reactor_api, "api_key", return_value="rk_test_only_never_valid"),
+                        patch.object(reactor_credentials, "STORE", {"T" * 43: self.credential}),
                         patch.object(reactor_api, "request", side_effect=AssertionError("No external requests"))]
         replacements += [patch.object(server, name, self.queue) for name in vars(server)
                          if name == "POOL" or name.endswith("_POOL")]
@@ -65,7 +70,9 @@ class RemixTests(unittest.TestCase):
                             "composites": [self.composite]}]}
         media.write_json(server.manifest(self.video), self.project)
 
-    def generated(self, source, output, prompt, *, on_progress=None):
+    def generated(self, source, output, prompt, *, on_progress=None, credential_key=None, credential_owner=None):
+        self.assertEqual(credential_key, self.credential.key)
+        self.assertEqual(credential_owner, self.credential.fingerprint)
         self.assertEqual(Path(source).resolve(), self.original.resolve())
         self.assertTrue(prompt.strip())
         self.assertNotEqual(Path(output).resolve(), self.original.resolve())
@@ -82,7 +89,7 @@ class RemixTests(unittest.TestCase):
         handler.command = "GET" if value is None else "POST"
         handler.path = path
         body = b"" if value is None else json.dumps(value).encode()
-        handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json"}
+        handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json", "Cookie": self.cookie}
         handler.rfile = io.BytesIO(body)
         handler.trusted = Mock(return_value=True)
         handler.send_json = Mock()
@@ -95,7 +102,7 @@ class RemixTests(unittest.TestCase):
         return call.args[0], call.args[1] if len(call.args) > 1 else 200
 
     def remix(self, **kwargs):
-        return server.start_remix(self.video, self.composite["id"], "day-to-night", **kwargs)
+        return server.start_remix(self.video, self.composite["id"], "day-to-night", credential=self.credential, **kwargs)
 
     def saved(self, identifier):
         return next(item for item in server.load_project(self.video).get("remixes", []) if item["id"] == identifier)
@@ -161,7 +168,7 @@ class RemixTests(unittest.TestCase):
     def test_only_an_existing_completed_composite_can_be_selected(self):
         for identifier in ("missing", "falrun", "../../source.mp4"):
             with self.subTest(identifier=identifier), self.assertRaises(ValueError):
-                server.start_remix(self.video, identifier, "day-to-night")
+                server.start_remix(self.video, identifier, "day-to-night", credential=self.credential)
         for status in ("queued", "running", "failed"):
             changed = copy.deepcopy(self.project)
             changed["generations"][0]["status"] = status

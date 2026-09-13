@@ -37,14 +37,9 @@ def selection(preset_id="day-to-night", prompt=None):
     return {**preset, "prompt": value.strip()}
 
 
-def public_catalog():
-    import reactor_api
+def public_catalog(*, credential=None):
     from reactor_live import SESSION_SECONDS
-    try:
-        reactor_api.api_key()
-        configured = True
-    except reactor_api.ReactorError:
-        configured = False
+    configured = credential is not None
     return {"provider": "Reactor", "model": "X2", "model_id": MODEL,
             "configured": configured, "presets": PRESETS, "live_max_session_seconds": SESSION_SECONDS,
             "live_prompts": {

@@ -21,6 +21,12 @@ fonts and preserve the content-derived build fingerprint.
   process `FAL_KEY`; status remains read-only.
 - Keep account usage as a link to the [Fal usage dashboard](https://fal.ai/dashboard/usage-billing).
   Do not fetch or display billing balances or usage totals in this app.
+- Reactor live tokens and saved remixes require the browser's separate eight-hour
+  Reactor credential. Capture its key in queued work and persist only its owner
+  fingerprint; include that owner in remix cache identity. Keep both providers'
+  cookies independent. Revoke Reactor credentials on disconnect, expiry and
+  login/logout. Never use the owner's environment key for a browser request or
+  write Reactor keys to runtime files, subprocess arguments or logs.
 - Preserve original source bytes and timestamps. Browser previews are separate.
   Never silently lower download quality after failure.
 - Only titles containing the case-insensitive whole word `football` receive
@@ -45,17 +51,18 @@ fonts and preserve the content-derived build fingerprint.
 - Generation, visual labels and import are separate operations. Recovery reads
   acknowledged requests and saved media; it never repeats an ambiguous paid POST.
 - Reactor X2 remixes are an optional operation on completed highlights, using the
-  server-only `REACTOR_API_KEY`. `remix_catalog.py` owns model and preset prompts.
-  Preserve original composites and audio, confine inputs to the owning completed
-  run, and deduplicate by source bytes, prompt and model. Keep separate remix IDs
-  and durable job records; recovery must repair both without repeating a session.
+  connected browser's captured credential. `remix_catalog.py` owns model and preset
+  prompts. Preserve original composites and audio, confine inputs to the owning
+  completed run, and deduplicate by source bytes, prompt, model and credential
+  owner. Keep separate remix IDs and durable job records; recovery must repair both
+  without repeating a session.
   X2 output is native model resolution; do not claim source-frame alignment from
   matching duration or advertise it as 4K preservation.
 - Shared-host authentication, same-origin checks, private keys and persistent
   storage belong to the server boundary. Do not expose an unlocked shared instance.
-  Browser Fal keys start blank and live only in server memory for that browser's
-  connection, for up to eight hours. Use an opaque HttpOnly cookie; never write
-  keys to disk or fall back to an owner's environment key for HTTP requests.
+  Browser Fal and Reactor keys start blank and live only in server memory for that
+  browser's separate connections, for up to eight hours. Use opaque HttpOnly cookies;
+  never write keys to disk or fall back to an owner's environment key for HTTP requests.
 - Run `python -m unittest discover -v -p 'test_*.py'`,
   `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js test_ui_orbit_paths.js`,
   `node --test ui/live-client/test_controller.mjs`, `python doctor.py --model`, and

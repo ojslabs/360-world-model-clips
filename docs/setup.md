@@ -84,12 +84,15 @@ API, `POST /api/generate` accepts `orbit_path` with `around`, `over-under` or
 
 ## Optional Reactor remixes
 
-Add `REACTOR_API_KEY` to the server environment or private `.env.local` file to
-enable Reactor X2 edits of finished highlights. Shared Docker deployments can
-include it in the private `.env` file. This key is separate from each visitor's
-Fal connection. Keep it out of the repository, browser bundle and image build
-arguments. Anyone with access to the shared app can use the configured Reactor
-account's credits.
+Enter your own Reactor key in the blank **Your Reactor account** field and click
+**Connect Reactor**. This optional connection enables live previews and saved X2
+remixes, charged to your Reactor account. It is independent of your Fal key.
+
+The server holds the key only in memory for up to eight hours, identified by a
+separate HttpOnly browser cookie. **Disconnect**, expiry, a server restart or
+signing out removes the connection. Reconnect to start new work. A saved remix
+already queued continues with the key captured when it started. Browser requests
+always use your connected key; the host's `REACTOR_API_KEY` cannot authorize them.
 
 Step 4 offers a live preview. Choose one finished clip, click **Start live preview**,
 then switch **Day** and **Night** while Reactor streams its edited video back.
@@ -104,8 +107,9 @@ instructions are documented in [Live video client](../ui/live-client/README.md).
 Under **Saved remixes**, choose a completed highlight and an effect such as day-to-night, jelly world,
 claymation or neon, then review or edit its prompt before starting the remix.
 Reactor writes a separate result and retains the original clip and its audio.
-Repeat requests for the same unchanged clip and prompt reuse the active or
-completed result. Failed or interrupted sessions are not automatically repeated.
+Repeat requests under the same Reactor key for the same unchanged clip and prompt
+reuse the active or completed result. Failed or interrupted sessions are not
+automatically repeated.
 
 X2 works at its native output resolution, not the original 4K resolution. Its
 generated action and camera framing can change; preserving output duration does
@@ -148,7 +152,8 @@ Python dependencies and the verified speech model. Model/tool files live outside
 the writable `/data` volume. It runs as a non-root user.
 
 Copy `.env.example` to `.env` and fill in a password of at least 16 characters
-and the browser origin. Users connect their own Fal key in the page after login.
+and the browser origin. Users connect their own Fal key and optional Reactor key
+in the page after login.
 For a local protected Docker check use
 `PUBLIC_ORIGIN=http://localhost:8476`; open that exact address after starting it.
 
@@ -163,8 +168,8 @@ docker run --rm --env-file .env \
 For a shared host, supply `DEMO_PASSWORD` and the exact HTTPS
 `PUBLIC_ORIGIN` in the private environment file. Terminate HTTPS at a reverse
 proxy forwarding to port 8476. The shared password gates the same workspace and
-saved media. Fal credentials are separate per browser connection, but project
-files and outputs are still shared. This is not a tenant-isolated service.
+saved media. Fal and Reactor credentials are separate per browser connection,
+but project files and outputs are still shared. This is not a tenant-isolated service.
 Public hosting requirements are enforced by the server configuration.
 
 CI builds the image and checks a protected container with a fresh data volume.
@@ -174,7 +179,7 @@ Run those checks in your deployment environment as well before publishing a host
 
 | Variable | Purpose |
 | --- | --- |
-| `REACTOR_API_KEY` | Optional server-side Reactor key for X2 remixes |
+| `REACTOR_API_KEY` | Optional legacy direct/internal Reactor calls; browser requests require their own connected key |
 | `FOOTBALL_DATA_DIR` | Persistent sources, jobs and exports; defaults to `.runtime` |
 | `FOOTBALL_YTDLP` | Optional yt-dlp executable path |
 | `FOOTBALL_FFMPEG` | Optional absolute FFmpeg path; uses its sibling FFprobe when present, otherwise PATH |

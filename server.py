@@ -25,6 +25,7 @@ import demo_auth
 from runtime_paths import data_dir
 import download_progress
 import fal_credentials
+import reactor_credentials
 import orbit_paths
 
 ROOT = Path(__file__).resolve().parent
@@ -1211,8 +1212,10 @@ def save_remix(video_id, remix_id, **changes):
         return result.copy()
 
 
-def start_remix(video_id, composite_id, preset_id="day-to-night", prompt=None):
+def start_remix(video_id, composite_id, preset_id="day-to-night", prompt=None, *, credential=None):
     import remix_catalog
+    if credential is None:
+        raise reactor_credentials.CredentialError("Connect your Reactor API key before remixing.")
     video_id = media.youtube_id(video_id)
     chosen_preset = remix_catalog.selection(preset_id, prompt)
     source, chosen = remix_source(video_id, composite_id)
@@ -1222,36 +1225,40 @@ def start_remix(video_id, composite_id, preset_id="day-to-night", prompt=None):
             identity.update(chunk)
     source_hash = identity.hexdigest()
     cache_key = hashlib.sha256(json.dumps([source_hash, composite_id, remix_catalog.MODEL,
-                                          chosen_preset["prompt"]]).encode()).hexdigest()
+                                          chosen_preset["prompt"], credential.fingerprint]).encode()).hexdigest()
     with LOCK:
         project = load_project(video_id)
         existing = next((r for r in project.get("remixes", []) if r.get("cache_key") == cache_key
+                         and r.get("credential_owner") == credential.fingerprint
                          and (r.get("status") in {"queued", "running"}
                               or r.get("status") == "complete" and
                               (folder(video_id) / "exports" / r["id"] / "reactor-remix.mp4").is_file())), None)
         if existing:
             return {"job_id": existing["job_id"], "remix_id": existing["id"], "cached": True}
-        if not remix_catalog.public_catalog()["configured"]:
-            raise ValueError("Add the Reactor API key to the server before generating a remix.")
         remix_id, job_id = "remix-" + uuid.uuid4().hex[:12], uuid.uuid4().hex[:12]
         entry = {"id": remix_id, "job_id": job_id, "video_id": video_id,
                  "composite_id": composite_id, "source_run_id": chosen["run_id"],
                  "source_sha256": source_hash, "source_url": chosen["url"],
                  "cache_key": cache_key, "provider": "Reactor", "model": remix_catalog.MODEL,
+                 "credential_source": "browser", "credential_owner": credential.fingerprint,
                  "preset_id": chosen_preset["id"], "label": chosen_preset["label"],
                  "prompt": chosen_preset["prompt"], "status": "queued", "stage": "queued",
                  "message": "Waiting for Reactor", "created_at": time.time()}
         project.setdefault("remixes", []).insert(0, entry)
         media.write_json(folder(video_id) / "exports" / remix_id / "remix.json", entry)
         media.write_json(manifest(video_id), project)
-        result = task("Reactor: " + chosen_preset["label"], lambda: remix_video(video_id, remix_id),
+        result = task("Reactor: " + chosen_preset["label"], lambda: remix_video(video_id, remix_id, credential=credential),
                       job_id=job_id, video_id=video_id, executor=REMIX_POOL,
                       metadata={"operation": "remix", "remix_id": remix_id})
         return {**result, "remix_id": remix_id}
 
 
-def remix_video(video_id, remix_id):
+def remix_video(video_id, remix_id, *, credential=None):
     import reactor_remix
+    snapshot = next(r for r in load_project(video_id).get("remixes", []) if r["id"] == remix_id)
+    if (credential is None or snapshot.get("credential_source") != "browser"
+            or snapshot.get("credential_owner") != credential.fingerprint):
+        raise reactor_credentials.CredentialError("This saved remix belongs to a different Reactor key.")
     entry = save_remix(video_id, remix_id, status="running", stage="connecting", started_at=time.time())
     started = time.monotonic()
 
@@ -1276,7 +1283,8 @@ def remix_video(video_id, remix_id):
             raise ValueError("The original clip changed. Choose it again before remixing.")
         output = folder(video_id) / "exports" / remix_id / "reactor-remix.mp4"
         try:
-            receipt = reactor_remix.generate(source, output, entry["prompt"], on_progress=progress)
+            receipt = reactor_remix.generate(source, output, entry["prompt"], on_progress=progress,
+                                              credential_key=credential.key, credential_owner=credential.fingerprint)
         except reactor_remix.RemixError:
             raise
         except Exception:
@@ -1296,13 +1304,16 @@ def remix_video(video_id, remix_id):
         # Keep provider internals and credentials out of persistent state and browsers.
         message = (str(error) if isinstance(error, (ValueError, reactor_remix.RemixError)) else
                    "Reactor could not finish this remix. The original clip is still available.")
+        message = message.replace(credential.key, "[credential]")
         save_remix(video_id, remix_id, status="failed", stage="failed", error=message,
                    message=message, finished_at=time.time())
         raise ValueError(message) from None
 
 
-def start_remix_batch(video_id, composite_ids, preset_id="day-to-night", prompt=None):
+def start_remix_batch(video_id, composite_ids, preset_id="day-to-night", prompt=None, *, credential=None):
     import remix_catalog
+    if credential is None:
+        raise reactor_credentials.CredentialError("Connect your Reactor API key before remixing.")
     if (not isinstance(composite_ids, list) or not 1 <= len(composite_ids) <= 40
             or any(not isinstance(item, str) for item in composite_ids)
             or len(set(composite_ids)) != len(composite_ids)):
@@ -1310,7 +1321,7 @@ def start_remix_batch(video_id, composite_ids, preset_id="day-to-night", prompt=
     remix_catalog.selection(preset_id, prompt)
     for item in composite_ids:
         remix_source(video_id, item)
-    return {"jobs": [start_remix(video_id, item, preset_id, prompt) for item in composite_ids]}
+    return {"jobs": [start_remix(video_id, item, preset_id, prompt, credential=credential) for item in composite_ids]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1404,17 +1415,20 @@ class Handler(BaseHTTPRequestHandler):
                                 "orbit_paths": orbit_paths.catalog(),
                                 "generation": generation_status(fal_credentials.get(self.headers.get("Cookie"))), "seed": SEED,
                                 "fal_credentials": fal_credentials.status(self.headers.get("Cookie")),
+                                "reactor_credentials": reactor_credentials.status(self.headers.get("Cookie")),
                                 "workspace_reset": media.read_json(DATA / "workspace-reset.json", {}).get("id"),
                                 "action_labeling": {"ready": fal_credentials.get(self.headers.get("Cookie")) is not None}})
             elif path == "/api/credentials/fal":
                 self.send_json(fal_credentials.status(self.headers.get("Cookie")))
+            elif path == "/api/credentials/reactor":
+                self.send_json(reactor_credentials.status(self.headers.get("Cookie")))
             elif path == "/api/generation/check":
                 self.send_json(generation_status(fal_credentials.get(self.headers.get("Cookie"))))
             elif path == "/api/activity":
                 self.send_json({"jobs": compact_jobs(), "server_time": time.time()})
             elif path == "/api/remix-presets":
                 import remix_catalog
-                self.send_json(remix_catalog.public_catalog())
+                self.send_json(remix_catalog.public_catalog(credential=reactor_credentials.get(self.headers.get("Cookie"))))
             elif path.startswith("/api/jobs/"):
                 job = get_job(path.rsplit("/", 1)[1])
                 self.send_json(job if job else {"error": "Unknown job"}, 200 if job else 404)
@@ -1462,21 +1476,24 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError("Send a JSON object.")
             path = urlparse(self.path).path
-            if path in {"/api/credentials/fal", "/api/credentials/fal/clear"}:
+            if path in {"/api/credentials/fal", "/api/credentials/fal/clear",
+                        "/api/credentials/reactor", "/api/credentials/reactor/clear"}:
                 if not self.credential_origin():
                     self.send_json({"error": "Use this page's same-origin key form."}, 403)
                     return
+                provider_credentials = reactor_credentials if "/reactor" in path else fal_credentials
                 cookie = self.headers.get("Cookie")
                 secure = self.headers.get("Origin", "").startswith("https://")
                 if path.endswith("/clear"):
-                    fal_credentials.clear(cookie)
-                    header = fal_credentials.cookie_header(secure=secure, clear=True)
+                    provider_credentials.clear(cookie)
+                    header = provider_credentials.cookie_header(secure=secure, clear=True)
                     result = {"configured": False, "verified": False}
                 else:
-                    token, credential = fal_credentials.set_key(cookie, data.get("key"))
-                    header = fal_credentials.cookie_header(token, secure=secure)
-                    result = fal_credentials.status(f"{fal_credentials.COOKIE_NAME}={token}")
-                    resume_browser_generations(credential)
+                    token, credential = provider_credentials.set_key(cookie, data.get("key"))
+                    header = provider_credentials.cookie_header(token, secure=secure)
+                    result = provider_credentials.status(f"{provider_credentials.COOKIE_NAME}={token}")
+                    if provider_credentials is fal_credentials:
+                        resume_browser_generations(credential)
                 self.send_json(result, headers=[("Set-Cookie", header)])
                 return
             if path == "/api/search":
@@ -1509,7 +1526,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = start_assembly(data["video_id"], data["run_id"],
                                         data.get("tail_seconds", media.DEFAULTS["tail_seconds"]))
             elif path == "/api/remix":
-                options = {"preset_id": data.get("preset_id", "day-to-night"), "prompt": data.get("prompt")}
+                options = {"preset_id": data.get("preset_id", "day-to-night"), "prompt": data.get("prompt"),
+                           "credential": reactor_credentials.require(self.headers.get("Cookie"))}
                 if "composite_ids" in data:
                     result = start_remix_batch(data["video_id"], data["composite_ids"], **options)
                 else:
@@ -1518,7 +1536,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = task("Combine highlights", lambda: combine_highlights(data["video_id"], data.get("outputs")))
             elif path == "/api/reactor/live-token":
                 import reactor_live
-                result = reactor_live.token()
+                credential = reactor_credentials.require(self.headers.get("Cookie"))
+                result = reactor_live.token(credential_key=credential.key)
             else:
                 self.send_error(404)
                 return

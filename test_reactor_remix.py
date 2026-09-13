@@ -101,7 +101,7 @@ class RemixTests(unittest.TestCase):
              patch("reactor_api.mint_token", return_value={"jwt": "private-test-token"}) as mint, \
              patch.object(remix, "Capture", FakeCapture), patch.object(remix, "_stream_source", feed):
             asyncio.run(remix._session(request, receipt, save))
-            mint.assert_called_once_with(model="xmax/x2")
+            mint.assert_called_once_with(model="xmax/x2", credential_key=remix.reactor_api.ENV_CREDENTIAL)
         return receipt
 
     def test_single_session_prompt_and_complete_source_backlog(self):

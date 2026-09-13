@@ -154,8 +154,10 @@ It stops after five minutes, or when you click Stop. The optional source audio i
 not synchronized to the delayed picture. Saved file remixes are also available
 under **Saved remixes**.
 
-Reactor needs its own server-side key and credits. It is separate from the Fal
-orbit generation and keeps your original finished clips. See
+Enter your own key in **Your Reactor account** and click **Connect Reactor**.
+This optional connection serves both live previews and saved remixes, using your
+Reactor credits. The server holds it only in memory for up to eight hours;
+**Disconnect** removes it. Your Fal connection stays separate. See
 [Reactor setup](docs/setup.md#optional-reactor-remixes).
 
 If you find this useful, star the repository. Examples, bug reports and small

@@ -28,6 +28,7 @@ let activityClockOffset = 0;
 let activeLocalJobs = 0;
 let workspaceResetEpoch = 0;
 let falKeyBusy = false, falKeyEditing = false, falKeyNotice = "", falKeyError = false, falCredentialRevision = 0;
+let reactorKeyBusy = false, reactorKeyEditing = false, reactorKeyNotice = "", reactorKeyError = false, reactorCredentialRevision = 0;
 let loginRedirecting = false;
 const project = () => state.projects.find((p) => p.id === projectId);
 const active = () => project()?.candidates?.find((c) => c.id === activeId);
@@ -384,6 +385,90 @@ $("fal-key-reveal").addEventListener("click", () => {
   $("fal-key-reveal").setAttribute("aria-pressed", String(show));
 });
 
+function renderReactorCredentials() {
+  const configured = state.reactor_credentials?.configured === true;
+  const editing = !configured || reactorKeyEditing;
+  $("reactor-account").dataset.connected = String(configured);
+  $("reactor-account").setAttribute("aria-busy", String(reactorKeyBusy));
+  $("reactor-key-form").hidden = !editing;
+  $("reactor-key-connected").hidden = editing;
+  $("reactor-key-cancel").hidden = !configured;
+  $("reactor-key-badge").textContent = configured ? "Connected" : "Not connected";
+  for (const id of ["reactor-key", "reactor-key-connect", "reactor-key-reveal", "reactor-key-change", "reactor-key-disconnect", "reactor-key-cancel"]) $(id).disabled = reactorKeyBusy;
+  $("reactor-key-connect").textContent = reactorKeyBusy ? "Connecting…" : "Connect Reactor";
+  $("reactor-key-status").dataset.error = String(reactorKeyError);
+  $("reactor-key-status").textContent = reactorKeyNotice || (configured
+    ? "Your key is connected. Live previews and remixes use your Reactor credits."
+    : "Optional. Add your key to use the Reactor step after your highlight is ready.");
+}
+function clearReactorKeyInput() {
+  $("reactor-key").value = "";
+  $("reactor-key").type = "password";
+  $("reactor-key-reveal").textContent = "Show";
+  $("reactor-key-reveal").setAttribute("aria-label", "Show Reactor API key");
+  $("reactor-key-reveal").setAttribute("aria-pressed", "false");
+}
+function reactorReady() {
+  return !reactorKeyBusy && state.reactor_credentials?.configured === true && !!remixCatalog;
+}
+async function connectReactorKey() {
+  if (reactorKeyBusy) return;
+  let key = $("reactor-key").value.trim();
+  if (!key) { $("reactor-key").focus(); return; }
+  reactorKeyBusy = true; reactorKeyError = false; reactorKeyNotice = "Connecting your Reactor account…";
+  reactorCredentialRevision++;
+  clearReactorKeyInput(); renderReactorCredentials(); renderRemixes();
+  stopLivePreview("Live preview stopped while changing your Reactor key.");
+  try {
+    const response = api("/api/credentials/reactor", { key }, 20000);
+    key = "";
+    state.reactor_credentials = await response;
+    reactorCredentialRevision++;
+    reactorKeyEditing = false;
+    reactorKeyNotice = "Your Reactor key is connected. No generation has started.";
+    try { await Promise.all([refresh(), loadRemixPresets()]); }
+    catch { reactorKeyNotice = "Your key is connected. Reconnecting to load the Reactor controls…"; }
+  } catch (error) {
+    reactorKeyError = true;
+    reactorKeyNotice = error.status === 400 || error.status === 422
+      ? "Reactor could not accept that key. Check it and try again."
+      : "Could not confirm the Reactor connection. Refresh to check its status before trying again.";
+  } finally {
+    key = ""; reactorKeyBusy = false; reactorCredentialRevision++; renderReactorCredentials(); renderRemixes();
+  }
+}
+async function disconnectReactorKey() {
+  if (reactorKeyBusy) return;
+  reactorKeyBusy = true; reactorKeyError = false; reactorKeyNotice = "Disconnecting your Reactor key…";
+  reactorCredentialRevision++; clearReactorKeyInput(); renderReactorCredentials(); renderRemixes();
+  stopLivePreview("Live preview stopped because you disconnected Reactor.");
+  try {
+    state.reactor_credentials = await api("/api/credentials/reactor/clear", {}, 10000);
+    reactorCredentialRevision++;
+    reactorKeyEditing = false;
+    reactorKeyNotice = "Your Reactor key was removed. Saved remixes already submitted will finish.";
+  } catch {
+    reactorKeyError = true; reactorKeyNotice = "Could not confirm disconnection. Try again when the server reconnects.";
+  } finally {
+    reactorKeyBusy = false; reactorCredentialRevision++; renderReactorCredentials(); renderRemixes();
+  }
+}
+$("reactor-key-form").addEventListener("submit", (event) => { event.preventDefault(); void connectReactorKey(); });
+$("reactor-key-disconnect").addEventListener("click", () => { void disconnectReactorKey(); });
+$("reactor-key-change").addEventListener("click", () => {
+  reactorKeyEditing = true; reactorKeyNotice = ""; reactorKeyError = false; clearReactorKeyInput(); renderReactorCredentials(); $("reactor-key").focus();
+});
+$("reactor-key-cancel").addEventListener("click", () => {
+  reactorKeyEditing = false; reactorKeyNotice = ""; reactorKeyError = false; clearReactorKeyInput(); renderReactorCredentials();
+});
+$("reactor-key-reveal").addEventListener("click", () => {
+  const show = $("reactor-key").type === "password";
+  $("reactor-key").type = show ? "text" : "password";
+  $("reactor-key-reveal").textContent = show ? "Hide" : "Show";
+  $("reactor-key-reveal").setAttribute("aria-label", show ? "Hide Reactor API key" : "Show Reactor API key");
+  $("reactor-key-reveal").setAttribute("aria-pressed", String(show));
+});
+
 const ORBIT_ICONS = {
   around: '<ellipse cx="72" cy="42" rx="55" ry="18"/>',
   'over-under': '<ellipse cx="72" cy="42" rx="19" ry="35"/>',
@@ -464,16 +549,22 @@ function applyWorkspaceReset(snapshot) {
   return true;
 }
 async function refresh({ onlyChanged = false } = {}) {
-  const credentialRevision = falCredentialRevision;
+  const credentialRevision = falCredentialRevision, reactorRevision = reactorCredentialRevision;
   const snapshot = await api("/api/state", undefined, 20000);
   if (credentialRevision !== falCredentialRevision) {
     snapshot.fal_credentials = state.fal_credentials; snapshot.generation = state.generation; snapshot.action_labeling = state.action_labeling;
   }
+  if (reactorRevision !== reactorCredentialRevision) snapshot.reactor_credentials = state.reactor_credentials;
   const reset = applyWorkspaceReset(snapshot);
   const unchanged = !reset && visibleWorkspace(state) === visibleWorkspace(snapshot);
   if (!falKeyBusy && state.fal_credentials?.configured !== snapshot.fal_credentials?.configured) { falKeyNotice = ""; falKeyError = false; }
+  if (!reactorKeyBusy && state.reactor_credentials?.configured !== snapshot.reactor_credentials?.configured) {
+    reactorKeyNotice = ""; reactorKeyError = false;
+    if (!snapshot.reactor_credentials?.configured && liveSession) stopLivePreview("Your Reactor key connection has ended.");
+  }
   state = snapshot;
   renderFalCredentials();
+  renderReactorCredentials();
   renderOrbitChoices();
   renderActivity();
   if (onlyChanged && unchanged) { renderNewestOutput(); renderOutputRunStatus(); renderRemixes(); return; }
@@ -680,7 +771,7 @@ function applyAppUpdateWhenIdle() {
       || player.paused !== true || $("output-player").paused !== true || $("search-preview").open
       || /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName || "") || focused?.isContentEditable
       || pendingGenerations.size || activeLocalJobs || (state.jobs || []).some(activityIsRunning)
-      || liveSession || falKeyBusy || $("fal-key").value?.length
+      || liveSession || falKeyBusy || $("fal-key").value?.length || reactorKeyBusy || $("reactor-key").value?.length
       || state.projects.some((source) => source.status === "preparing_preview" || (source.generations || []).some(activityIsRunning))
       || [...actionLabelQueues.values()].some((queue) => queue.active || queue.next)
       || [...(document.querySelectorAll?.("video") || [])].some((video) => !video.paused)) return false;
@@ -1227,7 +1318,7 @@ function renderLivePreview({ empty = false } = {}) {
     : [{ id: "", label: "Finish a clip above to begin" }], liveClipSelections.get(projectId));
   $("reactor-live-source").disabled = !clips.length || !!liveSession;
   $("reactor-live-start").disabled = !!liveSession || !clips.length || !livePrompt() || !liveSessionLimit()
-    || !remixCatalog?.configured || typeof window.ReactorLive?.create !== "function";
+    || !reactorReady() || typeof window.ReactorLive?.create !== "function";
   $("reactor-live-stop").disabled = !liveSession;
   $("reactor-live-audio").disabled = !liveSession;
   for (const look of ["day", "night"]) {
@@ -1239,7 +1330,7 @@ function renderLivePreview({ empty = false } = {}) {
     generating: liveSession?.hasPicture ? "Waiting for Reactor's next chunk" : "Waiting for Reactor's first live picture", live: "Live from Reactor", stopped: "Live preview stopped" };
   let message = livePreviewState.message || labels[livePreviewState.state] || "Live preview is stopped.";
   if (!liveSession && livePreviewState.state === "idle") {
-    message = remixCatalogLoading ? "Loading Reactor settings…" : !remixCatalog?.configured ? "Connect Reactor to start a live preview."
+    message = remixCatalogLoading ? "Loading Reactor settings…" : !reactorReady() ? "Add your Reactor API key above to start a live preview."
       : typeof window.ReactorLive?.create !== "function" ? "The live preview adapter is unavailable. Reload the app to try again."
       : !livePrompt() ? "Live Day/Night prompts are unavailable. Refresh the Reactor connection."
       : !liveSessionLimit() ? "Live session settings are unavailable. Refresh the Reactor connection."
@@ -1273,7 +1364,7 @@ function stopLivePreview(message = "Live preview stopped.", stateName = "stopped
   renderLivePreview();
 }
 async function startLivePreview() {
-  if (liveSession || !remixCatalog?.configured || !livePrompt() || !liveSessionLimit() || typeof window.ReactorLive?.create !== "function") return;
+  if (liveSession || !reactorReady() || !livePrompt() || !liveSessionLimit() || typeof window.ReactorLive?.create !== "function") return;
   const clip = remixClips().find((item) => item.id === liveClipSelections.get(projectId));
   if (!clip) return;
   const session = { sequence: ++liveSessionSequence, sourceId: projectId, clipId: clip.id, prompt: livePrompt(), client: null,
@@ -1388,14 +1479,14 @@ function renderRemixes({ empty = false } = {}) {
   const running = remixes.filter((item) => ["queued", "running"].includes(item.status));
   const pending = pendingRemixSources.has(projectId) || running.length > 0;
   $("remix-generate").disabled = !clips.length || !draft?.prompt.trim() || !draft?.preset_id
-    || !remixCatalog?.configured || !!remixCatalogError || remixCatalogLoading || pending;
+    || !reactorReady() || !!remixCatalogError || remixCatalogLoading || pending;
   const count = draft?.source === "__all__" ? clips.length : 1;
   $("remix-connection").textContent = remixCatalogLoading ? "Loading Reactor presets…"
     : remixCatalogError ? remixText(remixCatalogError)
-    : !remixCatalog?.configured ? "Connect Reactor on the server to generate remixes."
+    : !reactorReady() ? "Add your Reactor API key above to generate remixes."
     : !clips.length ? "Choose a finished clip above to continue."
     : `${count} ${count === 1 ? "clip" : "clips"} will be sent to Reactor. Uses Reactor credits.`;
-  $("remix-reconnect").hidden = remixCatalogLoading || (!remixCatalogError && !!remixCatalog?.configured);
+  $("remix-reconnect").hidden = remixCatalogLoading || (!remixCatalogError && !!reactorReady());
   renderRemixProgress(state.jobs || [], { empty });
   const complete = remixes.filter((item) => item.status === "complete" && item.id && item.url);
   const newResults = complete.filter((item) => !knownRemixes.has(`${projectId}:${item.id}`));
@@ -1415,7 +1506,7 @@ function renderRemixes({ empty = false } = {}) {
 async function submitRemix(event) {
   event?.preventDefault();
   const sourceId = projectId, draft = remixDraft(), clips = remixClips(), epoch = workspaceResetEpoch;
-  if (!draft || !clips.length || !draft.prompt.trim() || !draft.preset_id || !remixCatalog?.configured
+  if (!draft || !clips.length || !draft.prompt.trim() || !draft.preset_id || !reactorReady()
       || remixCatalogError || pendingRemixSources.has(sourceId)
       || (project()?.remixes || []).some((item) => ["queued", "running"].includes(item.status))) return;
   const chosen = draft.source === "__all__" ? clips.map((clip) => clip.id) : clips.filter((clip) => clip.id === draft.source).map((clip) => clip.id);

@@ -20,6 +20,7 @@ import threading
 import time
 
 import media
+import reactor_api
 
 MODEL = "xmax/x2"
 FPS = 24
@@ -39,8 +40,11 @@ def _is_capacity_error(error):
             or bool(re.search(r"\b429\b|no available capacity|at capacity", str(error), re.I)))
 
 
-def _safe_error(error):
-    value = re.sub(r"https?://\S+|rk_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_.-]+", "[private detail]", str(error))
+def _safe_error(error, credential_key=None):
+    text = str(error)
+    if isinstance(credential_key, str) and credential_key:
+        text = text.replace(credential_key, "[private detail]")
+    value = re.sub(r"https?://\S+|rk_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_.-]+", "[private detail]", text)
     return value[:1200]
 
 
@@ -213,7 +217,7 @@ async def _flush_source(track, last_frame, capture, save):
          source_padding_finished=True)
 
 
-async def _session(request, receipt, save):
+async def _session(request, receipt, save, *, credential_key=reactor_api.ENV_CREDENTIAL):
     from reactor_api import mint_token
     from reactor_sdk import Reactor
 
@@ -237,7 +241,7 @@ async def _session(request, receipt, save):
     try:
         async with asyncio.timeout(340):
             save("authenticating")
-            token = await asyncio.to_thread(mint_token, model=MODEL)
+            token = await asyncio.to_thread(mint_token, model=MODEL, credential_key=credential_key)
             client = Reactor(model_name=MODEL, jwt=token["jwt"])
             client.on("message", message)
             client.on("error", lambda error: failures.append(
@@ -334,12 +338,14 @@ def _finish(request, receipt, save):
     save("complete", percent=100)
 
 
-def _worker(request_path):
+def _worker(request_path, *, credential_key=reactor_api.ENV_CREDENTIAL):
     request = media.read_json(Path(request_path))
     output = Path(request["output"])
     receipt = {"status": "running", "model": MODEL, "provider": "Reactor",
                "source": request["source"], "source_media": request["source_media"],
                "source_sha256": request["source_sha256"], "prompt": request["prompt"],
+               "credential_source": request.get("credential_source", "server"),
+               "credential_owner": request.get("credential_owner"),
                "created_at": request["created_at"], "fps": FPS,
                "frames_expected": request["expected_frames"],
                "transport_size": list(_transport_size(request["source_media"])),
@@ -352,20 +358,27 @@ def _worker(request_path):
         media.write_json(_receipt_path(output), receipt)
 
     try:
-        asyncio.run(_session(request, receipt, save))
+        if request.get("credential_source") == "browser" and credential_key is reactor_api.ENV_CREDENTIAL:
+            raise RemixError("Reconnect the Reactor key that submitted this remix. No retry was submitted.")
+        credential_key = reactor_api.resolve_key(credential_key)
+        owner = request.get("credential_owner")
+        if owner and owner != reactor_api.credential_fingerprint(credential_key):
+            raise RemixError("This remix belongs to a different Reactor key. No retry was submitted.")
+        asyncio.run(_session(request, receipt, save, credential_key=credential_key))
         _finish(request, receipt, save)
         return 0
     except (Exception, KeyboardInterrupt) as error:
         public_error = (CAPACITY_MESSAGE if _is_capacity_error(error) else
-                        _safe_error(error) if isinstance(error, RemixError) else
+                        _safe_error(error, credential_key) if isinstance(error, RemixError) else
                         "The remix stopped during " + receipt.get("stage", "setup") + ". No retry was submitted.")
-        receipt.update(status="failed", error=public_error, diagnostic=_safe_error(error),
+        receipt.update(status="failed", error=public_error, diagnostic=_safe_error(error, credential_key),
                        error_type=type(error).__name__)
         save("failed")
         return 1
 
 
-def generate(source: Path, output: Path, prompt: str, *, on_progress=None) -> dict:
+def generate(source: Path, output: Path, prompt: str, *, on_progress=None,
+             credential_key=reactor_api.ENV_CREDENTIAL, credential_owner=None) -> dict:
     """Create one separate remix. Existing attempt files prohibit a paid retry."""
     source, output = Path(source).resolve(), Path(output).resolve()
     if not source.is_file() or source == output or output.suffix.lower() != ".mp4":
@@ -374,6 +387,14 @@ def generate(source: Path, output: Path, prompt: str, *, on_progress=None) -> di
         raise RemixError("The remix prompt must contain 1 to 1000 characters.")
     if output.exists() or _native_path(output).exists() or _receipt_path(output).exists():
         raise RemixError("This remix attempt already exists. Its original result will not be replaced.")
+    browser_owned = credential_key is not reactor_api.ENV_CREDENTIAL
+    try:
+        credential_key = reactor_api.resolve_key(credential_key)
+    except reactor_api.ReactorError:
+        raise RemixError("Connect your Reactor API key before remixing.") from None
+    fingerprint = reactor_api.credential_fingerprint(credential_key)
+    if credential_owner is not None and (not browser_owned or credential_owner != fingerprint):
+        raise RemixError("This remix belongs to a different Reactor key. No retry was submitted.")
     details = media.probe(source)
     if not math.isfinite(details["duration"]) or not 5 <= details["duration"] <= 60:
         raise RemixError("Choose a finished clip between 5 and 60 seconds.")
@@ -383,18 +404,29 @@ def generate(source: Path, output: Path, prompt: str, *, on_progress=None) -> di
     video_duration = _video_info(source)["duration"]
     request = {"source": str(source), "output": str(output), "prompt": prompt,
                "source_media": details, "source_sha256": source_hash,
-               "expected_frames": round(video_duration * FPS), "created_at": time.time()}
+               "expected_frames": round(video_duration * FPS), "created_at": time.time(),
+               "credential_source": "browser" if browser_owned else "server",
+               "credential_owner": fingerprint}
     try:
         with _request_path(output).open("x") as stream:
             json.dump(request, stream)
         _request_path(output).chmod(0o600)
     except FileExistsError:
         raise RemixError("This remix attempt was already submitted. It will not be resubmitted.") from None
-    worker = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--worker", str(_request_path(output))],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    worker = None
     started = time.monotonic()
     last = None
     try:
+        # The immutable key crosses the process boundary only in an anonymous pipe.
+        # Never place it in arguments, inherited environment, or request files.
+        worker = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--worker",
+                                   str(_request_path(output)), "--credential-stdin"],
+                                  stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, start_new_session=True)
+        try:
+            worker.stdin.write(credential_key.encode("ascii"))
+        finally:
+            worker.stdin.close()
         while worker.poll() is None:
             if time.monotonic() - started > TIMEOUT_SECONDS:
                 raise RemixError("The remix exceeded its time limit. No retry was submitted.")
@@ -406,7 +438,7 @@ def generate(source: Path, output: Path, prompt: str, *, on_progress=None) -> di
                 last = progress
             time.sleep(.25)
     except BaseException as error:
-        if worker.poll() is None:
+        if worker is not None and worker.poll() is None:
             import signal
             os.killpg(worker.pid, signal.SIGTERM)
             try:
@@ -415,7 +447,7 @@ def generate(source: Path, output: Path, prompt: str, *, on_progress=None) -> di
                 os.killpg(worker.pid, signal.SIGKILL)
                 worker.wait()
         interrupted = media.read_json(_receipt_path(output), {})
-        interrupted.update(status="failed", error=_safe_error(error) or "The local remix wait was interrupted.",
+        interrupted.update(status="failed", error=_safe_error(error, credential_key) or "The local remix wait was interrupted.",
                            disconnect_completed=False)
         media.write_json(_receipt_path(output), interrupted)
         raise
@@ -428,6 +460,13 @@ def generate(source: Path, output: Path, prompt: str, *, on_progress=None) -> di
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "--worker" and sys.argv[3] == "--credential-stdin":
+        # Missing, oversized or malformed pipe input fails closed in resolve_key.
+        try:
+            supplied_key = sys.stdin.buffer.read(513).decode("ascii")
+        except (OSError, UnicodeError):
+            supplied_key = None
+        raise SystemExit(_worker(sys.argv[2], credential_key=supplied_key))
     if len(sys.argv) == 3 and sys.argv[1] == "--worker":
         raise SystemExit(_worker(sys.argv[2]))
     raise SystemExit("This adapter is called by the local app.")

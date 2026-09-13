@@ -17,7 +17,8 @@ control. There is no CDN dependency. The only build adaptation redirects the pin
 WASM module's asset lookup to that local URL. `bundle-meta.json` lists bundled inputs.
 
 The adapter alone requests a short-lived token from `POST /api/reactor/live-token`.
-Tokens stay in browser memory. API keys stay on the server. An explicit start opens
+Tokens stay in browser memory. The server uses the key from this browser's Reactor
+connection and holds it only in memory. An explicit start opens
 one session with one token request and one `connect` call. Read-only readiness
 and SDP polling can continue while that same session warms up. Stop calls `disconnect(false)`;
 page exit cleanup is best effort, backed by the server token's session duration cap.

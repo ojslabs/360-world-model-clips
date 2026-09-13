@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 
 import reactor_api
+import reactor_credentials
 import reactor_live
 import server
 
@@ -96,7 +97,10 @@ class ProtectedReactorLiveTests(unittest.TestCase):
         self.root = Path(temporary.name)
         replacements = [patch.dict(os.environ, {"DEMO_PASSWORD": PASSWORD, "PUBLIC_ORIGIN": ORIGIN}, clear=True),
                         patch.object(demo_auth, "FAILURES", {}), patch.object(server, "DATA", self.root),
-                        patch.object(server, "JOBS", {}), patch.object(reactor_api, "api_key", return_value=KEY)]
+                        patch.object(server, "JOBS", {}), patch.object(reactor_api, "api_key", return_value=KEY),
+                        patch.object(reactor_credentials, "STORE", {}),
+                        patch.object(reactor_credentials, "verify_key", return_value=True),
+                        patch.object(reactor_credentials.threading, "Timer")]
         for replacement in replacements:
             replacement.start()
             self.addCleanup(replacement.stop)
@@ -132,7 +136,11 @@ class ProtectedReactorLiveTests(unittest.TestCase):
         status, headers, _ = self.request(path="/login", body=urlencode({"password": PASSWORD}).encode(),
                                          content_type="application/x-www-form-urlencoded")
         self.assertEqual(status, 303)
-        return headers["Set-Cookie"].split(";", 1)[0]
+        auth_cookie = headers["Set-Cookie"].split(";", 1)[0]
+        status, headers, _ = self.request(path="/api/credentials/reactor", cookie=auth_cookie,
+                                         body=json.dumps({"key": KEY}).encode())
+        self.assertEqual(status, 200)
+        return auth_cookie + "; " + headers["Set-Cookie"].split(";", 1)[0]
 
     def test_unauthenticated_post_and_head_cannot_mint_browser_tokens(self):
         for method in ("POST", "HEAD"):

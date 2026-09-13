@@ -28,7 +28,7 @@ function harness() {
   vm.runInContext(fs.readFileSync(path.join(__dirname, "ui/app.js"), "utf8"), context);
   vm.runInContext(`
     projectId = "source";
-    state = { projects: [{ id: "source", title: "Source", candidates: [], remixes: [], generations: [
+    state = { reactor_credentials: { configured: true }, projects: [{ id: "source", title: "Source", candidates: [], remixes: [], generations: [
       { id: "run-b", provider: "Fal", status: "complete", freeze_time: 24, composites: [{ id: "clip-b", url: "/b.mp4", media: { duration: 18 } }] },
       { id: "run-a", provider: "Fal", status: "complete", freeze_time: 12, composites: [{ id: "clip-a", url: "/a.mp4", media: { duration: 18 } }] }
     ] }], jobs: [] };
@@ -118,9 +118,9 @@ test("newly completed remixes select once and polling preserves user playback an
 test("unconfigured connection and active saved remixes block submissions", async () => {
   const { ui, element, context, evaluate } = harness(); let calls = 0;
   context.request = async () => { calls++; };
-  evaluate("api = request; remixCatalog.configured = false;"); ui.renderRemixes(); await ui.submitRemix();
+  evaluate("api = request; state.reactor_credentials.configured = false;"); ui.renderRemixes(); await ui.submitRemix();
   assert.equal(element("remix-generate").disabled, true); assert.equal(calls, 0);
-  evaluate("remixCatalog.configured = true; project().remixes = [{id:'saved',status:'running',message:'Receiving frames.'}];");
+  evaluate("state.reactor_credentials.configured = true; project().remixes = [{id:'saved',status:'running',message:'Receiving frames.'}];");
   ui.renderRemixes(); await ui.submitRemix();
   assert.equal(element("remix-generate").disabled, true); assert.equal(calls, 0);
   assert.match(element("remix-progress").textContent, /Reactor.*Receiving frames/);

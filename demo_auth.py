@@ -238,16 +238,22 @@ def intercept(handler, head=False):
             return _send(handler, 400, "Send a small sign-in form.")
         _allow_attempt(address, clear=True)
         import fal_credentials
+        import reactor_credentials
         fal_credentials.clear(handler.headers.get("Cookie"))
+        reactor_credentials.clear(handler.headers.get("Cookie"))
         return _send(handler, 303, headers=[("Location", next_path),
                      ("Set-Cookie", fal_credentials.cookie_header(secure=True, clear=True)),
+                     ("Set-Cookie", reactor_credentials.cookie_header(secure=True, clear=True)),
                      ("Set-Cookie", _cookie(_token()))])
     if path == "/logout" and method == "POST":
         import fal_credentials
+        import reactor_credentials
         fal_credentials.clear(handler.headers.get("Cookie"))
+        reactor_credentials.clear(handler.headers.get("Cookie"))
         return _send(handler, 303, headers=[("Location", "/login"),
                      ("Set-Cookie", _cookie("", clear=True)),
-                     ("Set-Cookie", fal_credentials.cookie_header(secure=True, clear=True))])
+                     ("Set-Cookie", fal_credentials.cookie_header(secure=True, clear=True)),
+                     ("Set-Cookie", reactor_credentials.cookie_header(secure=True, clear=True))])
     if _authenticated(handler):
         return False
     if path.startswith("/api/"):

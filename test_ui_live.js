@@ -28,7 +28,7 @@ function harness({ startPending = false } = {}) {
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname,"ui/app.js"),"utf8"),context);
   const evaluate = (code) => vm.runInContext(code,context);
-  evaluate(`projectId='source'; state={projects:[{id:'source',candidates:[],generations:[
+  evaluate(`projectId='source'; state={reactor_credentials:{configured:true},projects:[{id:'source',candidates:[],generations:[
     {id:'run-a',provider:'Fal',status:'complete',freeze_time:10,composites:[{id:'clip-a',url:'/a.mp4',media:{duration:18}}]},
     {id:'run-b',provider:'Fal',status:'complete',freeze_time:20,composites:[{id:'clip-b',url:'/b.mp4',media:{duration:18}}]}
   ]}],jobs:[]}; viewedOutputs.set('source','clip-b');
