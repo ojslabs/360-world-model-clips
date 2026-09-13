@@ -1,11 +1,17 @@
 # Working on 360° World Model Clips
 
-This repository is self-contained. Build with `python build_ui.py`; `_report_kit`
+This repository is self-contained. Build with `python -m scripts.build_ui`; `vendor/reportkit`
 owns the base HTML style and `ui/extra.css` owns the editor appearance. Use system
 fonts and preserve the content-derived build fingerprint.
 
-- `orbit_preset.json` owns the Fal model, fixed prompt and original Around path.
-  `orbit_paths.py` derives the Around / Over & under / Diagonal choices. Keep
+Python application code lives in `app/`, tools in `scripts/`, and regression tests
+in `tests/python/` and `tests/js/`. `app.runtime_paths.PROJECT_ROOT` owns the
+checkout root. Moving a module must never relocate `.runtime`, `.env.local`,
+`ui/` or the provider preset. Keep root `server.py` and `bootstrap.py` as the
+documented entry points. Product behavior is recorded in [the brief](docs/BRIEF.md).
+
+- `config/orbit_preset.json` owns the Fal model, fixed prompt and original Around path.
+  `app/orbit_paths.py` derives the Around / Over & under / Diagonal choices. Keep
   duration, resolution and distance consistent with the base preset. Describe
   these as requested trajectories; position keyframes do not verify generated
   motion or pole orientation. Never replace a saved run's path during recovery.
@@ -32,7 +38,7 @@ fonts and preserve the content-derived build fingerprint.
 - Only titles containing the case-insensitive whole word `football` receive
   captions and audio analysis. Other titles use full-video manual selection.
   Preserve curated candidates and saved frames on reimport.
-- Derive timing from `media.DEFAULTS`: currently 4 seconds before, 6 seconds of
+- Derive timing from `app.media.DEFAULTS`: currently 4 seconds before, 6 seconds of
   orbit and up to 10 seconds after, at most 20 seconds total. Require the full lead;
   cap the tail at the remaining video from the next source frame. A selection on
   the last frame has no tail. Preserve historical output timing and metadata.
@@ -51,7 +57,7 @@ fonts and preserve the content-derived build fingerprint.
 - Generation, visual labels and import are separate operations. Recovery reads
   acknowledged requests and saved media; it never repeats an ambiguous paid POST.
 - Reactor X2 remixes are an optional operation on completed highlights, using the
-  connected browser's captured credential. `remix_catalog.py` owns model and preset
+  connected browser's captured credential. `app/remix_catalog.py` owns model and preset
   prompts. Preserve original composites and audio, confine inputs to the owning
   completed run, and deduplicate by source bytes, prompt, model and credential
   owner. Keep separate remix IDs and durable job records; recovery must repair both
@@ -63,11 +69,11 @@ fonts and preserve the content-derived build fingerprint.
   Browser Fal and Reactor keys start blank and live only in server memory for that
   browser's separate connections, for up to eight hours. Use opaque HttpOnly cookies;
   never write keys to disk or fall back to an owner's environment key for HTTP requests.
-- Run `python -m unittest discover -v -p 'test_*.py'`,
-  `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js test_ui_orbit_paths.js`,
-  `node --test ui/live-client/test_controller.mjs`, `python doctor.py --model`, and
-  `python build_ui.py`. Inspect decoded media for picture/audio changes.
-  Focused camera geometry: `python -m unittest -v test_orbit_paths`.
+- Run `python -m unittest discover -s tests/python -t . -v -p 'test_*.py'`,
+  `node --test tests/js/*.js`,
+  `node --test ui/live-client/test_controller.mjs`, `python -m scripts.doctor --model`, and
+  `python -m scripts.build_ui`. Inspect decoded media for picture/audio changes.
+  Focused camera geometry: `python -m unittest -v tests.python.test_orbit_paths`.
 
 Keep docs limited to built behavior. Record material limits and test results
 plainly. Do not add provider credentials or private user history to examples.

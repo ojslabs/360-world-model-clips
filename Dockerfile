@@ -21,9 +21,9 @@ COPY --from=node_runtime /usr/local/LICENSE /usr/local/share/doc/node/LICENSE
 COPY requirements-linux.lock ./
 RUN python -m pip install --no-cache-dir -r requirements-linux.lock
 COPY . .
-RUN python crowd_audio.py --setup-model \
-    && python build_ui.py \
-    && python doctor.py --model \
+RUN python -m app.crowd_audio --setup-model \
+    && python -m scripts.build_ui \
+    && python -m scripts.doctor --model \
     && useradd --create-home --uid 10001 clips \
     && mkdir -p /data \
     && chown -R clips:clips /app /data

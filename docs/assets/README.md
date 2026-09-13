@@ -17,7 +17,7 @@ The selected reference is at **586.36 seconds (9:46.36)** in that source.
 | [f1-orbit.gif](f1-orbit.gif) | The complete six-second orbit section of the saved edit | 640 × 360, 10 fps, no audio |
 | [f1-sequence.jpg](f1-sequence.jpg) | Orbit frames at 0, 1.5, 3 and 4.5 seconds, read left to right then top to bottom | Four 480 × 270 panels |
 
-The edit used [preset v5](../../orbit_preset.json) and Fal's
+The edit used [preset v5](../../config/orbit_preset.json) and Fal's
 [`minimax/h3-max/camera-controls`](https://fal.ai/models/minimax/h3-max/camera-controls)
 endpoint, requesting `1080P` and six seconds. The returned video had 1920 × 1080
 frames at 24 fps and a 6.583333-second picture track. Local processing retimed its

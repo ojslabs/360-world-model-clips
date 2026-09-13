@@ -26,16 +26,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           python -m pip install -r requirements-linux.lock
-          python crowd_audio.py --setup-model
+          python -m app.crowd_audio --setup-model
       - name: Verify complete media decoding
-        run: python -m unittest -v test_media.MediaTests.test_strict_verification_rejects_decoder_errors_even_with_exit_zero test_composite.CompositeTests.test_endpoint_verification_still_decodes_video_and_audio_after_the_orbit
+        run: python -m unittest -v tests.python.test_media.MediaTests.test_strict_verification_rejects_decoder_errors_even_with_exit_zero tests.python.test_composite.CompositeTests.test_endpoint_verification_still_decodes_video_and_audio_after_the_orbit
       - name: Verify Python and browser behavior
         run: |
-          python -m unittest discover -v -p 'test_*.py'
+          python -m unittest discover -s tests/python -t . -v
           node --check ui/app.js
-          node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js test_ui_orbit_paths.js
-          node --test ui/live-client/test_controller.mjs
-          python build_ui.py
+          node --test tests/js/*.js ui/live-client/test_controller.mjs
+          python -m scripts.build_ui
   container:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

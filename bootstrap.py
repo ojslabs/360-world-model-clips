@@ -14,10 +14,10 @@ def main():
     python = environment / "bin" / "python"
     if not python.exists():
         venv.EnvBuilder(with_pip=True).create(environment)
-    subprocess.run([python, "-m", "pip", "install", "-r", ROOT / "requirements.txt"], check=True)
-    subprocess.run([python, ROOT / "crowd_audio.py", "--setup-model"], check=True)
-    subprocess.run([python, ROOT / "build_ui.py"], check=True)
-    subprocess.run([python, ROOT / "doctor.py", "--model"], check=True)
+    subprocess.run([python, "-m", "pip", "install", "-r", ROOT / "requirements.txt"], check=True, cwd=ROOT)
+    subprocess.run([python, "-m", "app.crowd_audio", "--setup-model"], check=True, cwd=ROOT)
+    subprocess.run([python, "-m", "scripts.build_ui"], check=True, cwd=ROOT)
+    subprocess.run([python, "-m", "scripts.doctor", "--model"], check=True, cwd=ROOT)
     print("Ready. Run .venv/bin/python server.py and open http://127.0.0.1:8476")
 
 

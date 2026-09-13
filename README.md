@@ -1,169 +1,94 @@
 # 360° World Model Clips
 
-Pick a frame from a video and move the camera around that moment. This app calls
-Fal's H3 Max camera-controls model, then places the generated orbit between the
-original action before and after your selection.
+Turn a moment from a video into a camera orbit, then return to the original action.
+Choose a frame, choose a path and download the finished edit.
+
+**[Download ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip)** ·
+[Quick start](#quick-start) · [How it works](docs/how-it-works.md) ·
+[Setup and Docker](docs/setup.md) · [MIT license](LICENSE)
 
 ![A generated camera orbit around a bicycle rider above an F1 car](docs/assets/f1-orbit.gif)
 
-Six seconds from a previously saved 18-second edit. Source: Red Bull's
-[Jumping Over A Moving F1 Car (world first)](https://www.youtube.com/watch?v=8o40mSS05iE&t=586).
-The preview is reduced to 640 × 360; the app requested Fal's 1080P output.
-[Example details and attribution](docs/assets/README.md).
+An Around example from a saved F1 edit. Preview: 640 × 360; generation: 1080P.
+[Source and attribution](docs/assets/README.md).
 
-[Run it locally](#run-it-locally) · [Setup and Docker](docs/setup.md) ·
-[Exact prompt](orbit_preset.json) · [Camera path definitions](orbit_paths.py)
+## Quick start
 
-## Make your first edit
+You need **Python 3.12**, **Node.js 22+**, **FFmpeg with FFprobe**, and your own
+**Fal API key** for generation. Reactor is optional and uses a separate key.
+Provider usage is paid through your accounts; no credits are included.
 
-Open the app and connect your own Fal key in the main page. The key field starts
-blank. Search for a YouTube video or paste its link, import it, then scrub to the
-moment you want. The frame controls let you move forwards or backwards before
-clicking **Use this frame**.
-
-Choose **Around**, **Over & under** or **Diagonal**, then click **Generate** when
-the frame is right. The finished edit appears in Outputs:
-
-| Original action | Generated orbit | Original action resumes |
-| --- | --- | --- |
-| 4 seconds before your frame | 6 seconds around the frozen reference | Up to 10 seconds after your frame |
-
-You get a 16:9 MP4 lasting up to 20 seconds. The continuation uses as much footage
-as remains, up to ten seconds, and can be empty at the final source frame. During
-the orbit, the source's own sound and music slow from 1x to 0.75x, then return to
-normal. Speech and background noise stay in the mix; silent videos stay silent.
-Download clips individually or combine finished clips of the same resolution
-into a reel. Previous edits keep their original timing and audio.
-Search, playback and choosing a frame do not submit a video generation request.
-
-### Choose the camera path
-
-![Requested camera paths: Around is a level circle, Over and under is a vertical circle, and Diagonal is a tilted circle](docs/assets/orbit-paths.svg)
-
-**Around** requests a level loop around the reference. **Over & under**
-requests a vertical loop, passing above and below the reference. **Diagonal**
-requests a loop tilted 45 degrees from Around.
-
-The diagram shows requested paths relative to the saved view. Fal still has to
-generate the result. Over & under is experimental: it has no camera-roll control at its poles, so
-the picture may flip there; Diagonal's keyframes approximate the tilted circle.
-Review those new paths on your own frame. The F1 video above demonstrates Around.
-Choosing a path alone does not start generation. To compare paths, choose another
-one and rerun an existing output's saved frame. The new output records the path
-you selected; the earlier edit stays available.
-
-## How the H3 Max orbit works
-
-The fixed prompt and original Around path live in
-[orbit_preset.json](orbit_preset.json). [orbit_paths.py](orbit_paths.py) defines the
-other camera choices from that preset.
-The actual Fal endpoint is
-[`minimax/h3-max/camera-controls`](https://fal.ai/models/minimax/h3-max/camera-controls),
-which Fal names H3 Max Camera Controls / Multi Angle. The app uses that published
-endpoint directly.
-
-1. The importer keeps the highest available source streams and their resolution.
-   If your browser needs another format, the app makes a separate preview. The
-   original remains the source for frame extraction and export. Titles containing
-   the whole word `football` also receive caption and audio-activity suggestions;
-   other videos open in manual selection without that analysis.
-
-2. **Use this frame** saves the selected source timestamp. Generation takes a
-   copy of the exact source frame as a PNG and saves the request beside it. The
-   moving video is used later for the edit; Fal receives the still image.
-
-3. The server sends that image with the preset's fixed prompt and the selected
-   camera keyframes. The prompt asks the scene to stay frozen while the camera
-   moves. Around uses the original ten keyframes: it holds its starting angle
-   for 0.2 seconds, eases around one full turn
-   by 5.3 seconds, and holds the final angle for the remaining 0.7 seconds.
-   Its elevation stays at zero. All three choices keep distance at one and use
-   the same prompt, six-second duration and resolution. No assistant rewrites
-   the request between runs.
-
-4. Fal processes the queued request. The app shows progress, saves the provider's
-   response and downloads the original generated video. It retains the complete
-   returned timeline when adjusting the delivery to six seconds at 30 fps.
-   The saved request ID lets recovery check the existing run without silently
-   purchasing another generation.
-
-5. A local edit inserts the saved PNG at the first and last orbit frames, with
-   a direct cut and no added fade or hold. The app checks that those two decoded
-   frames still match in the finished MP4.
-
-6. FFmpeg joins four seconds of source, the orbit and up to ten seconds of source
-   continuation. Every new edit loops the 1.75 seconds of audio just before the
-   selected frame under the orbit. Speed and pitch ease from 1x to 0.75x, then
-   back to 1x. Original picture and audio resume together on the next source
-   frame. This local audio step makes no additional provider request.
-
-![Four views from the same F1 orbit: reference, first quarter, halfway and third quarter](docs/assets/f1-sequence.jpg)
-
-These views come from the earlier 18-second F1 edit at 0, 1.5, 3 and 4.5 seconds
-into its orbit. The existing preview assets retain that edit's timing.
-
-### What to expect from the result
-
-The preset requests six seconds, `1080P` output and `balanced` prompt expansion.
-Fal may expand the submitted text before generation. Its
-[schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=minimax/h3-max/camera-controls)
-describes 1080P as latent refinement from a 768P source. For a 4K source, the app's
-4K export keeps the original source and reference detail, then enlarges the
-generated frames to fit.
-
-The schema accepts one reference image and has no ending-image input. The matching
-endpoints come from the local edit above. H3 can still change a rider's pose,
-shift the background or return with different framing. A matching first and last
-frame does not prove that the generated subject stayed frozen or that the
-intervening camera move is physically accurate.
-
-The slow audio treatment applies automatically to every new video. It retains
-the complete source mix, including music and speech, and needs no crowd
-separation or per-video setting. See [orbit audio](docs/setup.md#orbit-audio).
-
-## Run it locally
-
-You need Python 3.12, Node.js 22 or newer, and FFmpeg with FFprobe. On macOS:
+On macOS with Homebrew:
 
 ```sh
 brew install python@3.12 ffmpeg node
-git clone https://github.com/ojslabs/360-world-model-clips.git
+git clone --depth 1 https://github.com/ojslabs/360-world-model-clips.git
 cd 360-world-model-clips
 python3.12 bootstrap.py
 .venv/bin/python server.py
 ```
 
-Open <http://127.0.0.1:8476> and paste your own Fal key into **Your Fal account**.
-Click **Connect Fal**. The server holds the key in memory for your browser session,
-for up to eight hours. It is not saved to disk or preloaded into the page.
-Disconnect to remove it; reconnect after a server restart. Fal usage is charged
-to your account.
+Downloaded the ZIP? Open its extracted folder and run the last two commands.
+Bootstrap installs pinned dependencies, verifies the media tools and builds the UI.
+[Linux, Docker and shared hosting](docs/setup.md).
 
-Use **View usage & billing** in the account panel to open your
-[Fal usage dashboard](https://fal.ai/dashboard/usage-billing).
+Open **<http://127.0.0.1:8476>**, paste your key into **Your Fal account** and
+click **Connect Fal**. Keys stay in server memory for your browser connection,
+for up to eight hours. Disconnect, expiry or a restart clears the connection.
+[Credentials and privacy](docs/setup.md#run-locally).
 
-Bootstrap installs the pinned Python dependencies, checks the media tools,
-downloads the verified speech model and builds the interface. See
-[setup](docs/setup.md) for Linux, Docker and shared-host configuration.
+## Make an edit
 
-## Optional live Day/Night preview
+1. Search for a YouTube video or paste its link. Preview it, then import it.
+2. Scrub to your moment, step forwards or backwards and click **Use this frame**.
+3. Choose a path, click **Generate**, then review and download the result in Outputs.
 
-Step 4 connects a finished clip to Reactor X2. Start the live preview and switch
-Day or Night while the same session streams edited frames back to the player.
-It stops after five minutes, or when you click Stop. The optional source audio is
-not synchronized to the delayed picture. Saved file remixes are also available
-under **Saved remixes**.
+| Before | Orbit | After |
+| --- | --- | --- |
+| 4 seconds of source | 6 seconds generated | Up to 10 seconds of source |
 
-Enter your own key in **Your Reactor account** and click **Connect Reactor**.
-This optional connection serves both live previews and saved remixes, using your
-Reactor credits. The server holds it only in memory for up to eight hours;
-**Disconnect** removes it. Your Fal connection stays separate. See
-[Reactor setup](docs/setup.md#optional-reactor-remixes).
+The 16:9 MP4 lasts up to 20 seconds. The source's own music, speech and background
+sound slow to 0.75x during the orbit and return to normal afterwards. Silent
+videos stay silent. Download individual clips or combine finished clips of the
+same resolution into a reel. Earlier edits remain available.
 
-If you find this useful, star the repository. Examples, bug reports and small
-pull requests are welcome, especially clips that expose a bad camera return.
-Keep credentials and private recordings out of issues.
+## Choose a path
 
-The code is [MIT licensed](LICENSE). The F1 demonstration uses third-party footage;
-its rights are separate from the code license. See the
-[example attribution](docs/assets/README.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+![Around, Over and under, and Diagonal camera paths](docs/assets/orbit-paths.svg)
+
+**Around** is a level loop. **Over & under** requests a vertical loop.
+**Diagonal** requests a loop tilted 45 degrees. These paths are relative to the
+saved view. Over & under is experimental and may flip at the top or bottom;
+Diagonal approximates its tilted circle with keyframes.
+[Path details and the fixed prompt](docs/how-it-works.md#camera-paths).
+
+Generation requests Fal's highest supported **1080P** setting. A **4K export**
+preserves the source and reference resolution and enlarges the generated orbit.
+The first and last orbit frames are matched locally. Subjects can still move
+within the generated scene; matching endpoints do not prove a frozen scene or
+an accurate full turn. [Result limits](docs/how-it-works.md#result-limits).
+
+## Optional Reactor remixes
+
+Connect your own key in **Your Reactor account** to try a live Day/Night preview
+or save a separate remix of a finished clip. Live toggles use the same session;
+**Stop** ends it, with a five-minute limit. Original edits remain unchanged.
+[Reactor setup and limits](docs/setup.md#optional-reactor-remixes).
+
+## Repository
+
+| Folder | Contents |
+| --- | --- |
+| [app/](app/) | Python service, provider adapters and video processing |
+| [ui/](ui/) | Browser interface and bundled live client |
+| [config/](config/) | Shared generation preset |
+| [scripts/](scripts/) | Build, setup and maintenance tools |
+| [tests/](tests/) | Python and JavaScript checks |
+| [docs/](docs/) | Setup, workflow and example attribution |
+| [vendor/](vendor/) | Included report-kit assets and licenses |
+
+[How it works](docs/how-it-works.md) · [Development and checks](docs/setup.md#checks) ·
+[Contributing](CONTRIBUTING.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+The code is MIT licensed. Rights to the [F1 example footage](docs/assets/README.md)
+are separate. Keep credentials and private recordings out of issues.

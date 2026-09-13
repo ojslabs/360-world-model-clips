@@ -4,7 +4,15 @@ This optional browser adapter streams a saved clip through the existing-video
 editor. Starting is explicit. Look changes reuse the same session. No source file
 or saved result is overwritten.
 
-Build with `npm ci --ignore-scripts && npm run build`; test with `npm test`.
+From the repository root:
+
+```sh
+cd ui/live-client
+npm ci --ignore-scripts
+npm run build
+npm test
+```
+
 The lockfile pins `@reactor-models/x2` 1.0.0 and `@reactor-team/js-sdk` 3.0.2.
 The latter includes an Apache-2.0 WASM transport. The wrapper declares MIT in its
 published manifest; its npm package does not include a copyright notice. The

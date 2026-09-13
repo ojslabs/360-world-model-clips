@@ -1,6 +1,6 @@
 # Third-party components
 
-The application and included `_report_kit` code are provided by OJS Labs under
+The application and included `vendor/reportkit` code are provided by OJS Labs under
 the [MIT license](LICENSE). No commercial font files, user videos, generated
 outputs, API keys or model weights are distributed in this source repository.
 The interface uses system fonts.
