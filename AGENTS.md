@@ -7,6 +7,14 @@ fonts and preserve the content-derived build fingerprint.
 - `orbit_preset.json` is the sole source for the Fal model, prompt and camera path.
 - Never commit credentials, `.env.local`, model weights, source videos, generated
   media or runtime receipts. Keep persistent state under `FOOTBALL_DATA_DIR`.
+  The explicitly approved documentation exceptions are `docs/assets/f1-orbit.gif`
+  and `docs/assets/f1-sequence.jpg`, with attribution in `docs/assets/README.md`.
+  Keep raw source recordings and full generated exports out of Git.
+- Bind every browser-paid Fal call, including visual labels, to its ephemeral
+  credential. Capture it in the worker and persist only its owner fingerprint in
+  both app and provider receipts. Recovery must reject another key and never use
+  the server environment for browser-origin runs. Direct CLI run requires its own
+  process `FAL_KEY`; status remains read-only.
 - Preserve original source bytes and timestamps. Browser previews are separate.
   Never silently lower download quality after failure.
 - Only titles containing the case-insensitive whole word `football` receive
@@ -33,8 +41,12 @@ fonts and preserve the content-derived build fingerprint.
   matching duration or advertise it as 4K preservation.
 - Shared-host authentication, same-origin checks, private keys and persistent
   storage belong to the server boundary. Do not expose an unlocked shared instance.
+  Browser Fal keys start blank and live only in server memory for that browser's
+  connection, for up to eight hours. Use an opaque HttpOnly cookie; never write
+  keys to disk or fall back to an owner's environment key for HTTP requests.
 - Run `python -m unittest discover -v -p 'test_*.py'`,
-  `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js`, `python doctor.py --model`, and
+  `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js`,
+  `node --test ui/live-client/test_controller.mjs`, `python doctor.py --model`, and
   `python build_ui.py`. Inspect decoded media for picture/audio changes.
 
 Keep docs limited to built behavior. Record material limits and test results

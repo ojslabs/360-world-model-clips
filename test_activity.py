@@ -74,7 +74,9 @@ class ActivityTests(unittest.TestCase):
         repeated = server.start_label(self.video, "cut1", 20)
         self.assertEqual(first, repeated)
         self.assertEqual(len(self.queues["LABEL_POOL"].pending), 1)
-        response = self.request("/api/label", {"video_id": self.video, "item_id": "cut2", "time": 30})
+        credential = server.fal_credentials.Credential("offline-test-browser-key", "test-owner", 9999999999)
+        with patch.object(server.fal_credentials, "require", return_value=credential):
+            response = self.request("/api/label", {"video_id": self.video, "item_id": "cut2", "time": 30})
         self.assertEqual(response.args[1], 409)
         self.assertIn("already being identified", response.args[0]["error"])
         self.queues["LABEL_POOL"].run_next()

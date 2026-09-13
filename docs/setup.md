@@ -1,20 +1,7 @@
 # Setup and development
 
-Import a YouTube video, choose the exact frame, generate an H3 Max camera orbit
-through Fal, and export it between the surrounding source action.
-
-- Full-source playback and frame-by-frame selection.
-- Highest available source resolution, with separate browser-compatible previews.
-- An 18-second edit: 8 seconds before the freeze, 6 seconds of orbit, 4 seconds after.
-- 1080p or 4K output. The 4K source and reference retain their detail; Fal's 1080p
-  generated interior is enlarged to fit.
-- Matching local reference endpoints, original action/audio resumption, individual
-  outputs and combined reels of matching resolution.
-- Saved jobs and local recovery without automatically repeating paid requests.
-
-The exact Fal prompt and camera path live in [orbit_preset.json](../orbit_preset.json).
-Local endpoint equality does not prove that generated subjects remain frozen or
-that every camera turn looks correct. Review the result before sharing it.
+The [README](../README.md) walks through the edit and shows a saved F1 example.
+These instructions cover installation, credentials and the optional services.
 
 ## Run locally
 
@@ -30,34 +17,52 @@ Bootstrap creates `.venv`, installs pinned dependencies, downloads and verifies
 the pinned Silero speech model, and builds the included HTML interface. No sibling
 repository, commercial font or JavaScript bundler is needed.
 
-Set `FAL_KEY` in your server environment, or put it in `.env.local`:
-
-```dotenv
-FAL_KEY=your-own-fal-key
-```
-
-Keep that file private. Then run:
+Start the server:
 
 ```sh
 .venv/bin/python server.py
 ```
 
-Open <http://127.0.0.1:8476>. Import and review work locally; generating an orbit
-and requesting a visual action label use your Fal account. API keys stay on the
-server. The code includes no credits, sample recordings or existing outputs.
+Open <http://127.0.0.1:8476>. In **Your Fal account**, paste your own key and click
+**Connect Fal**. The field starts blank. Import and review work locally;
+generating an orbit and requesting a visual action label use your Fal account.
+
+The browser sends the key to this app's server, which holds it only in memory.
+An HttpOnly cookie identifies your browser's connection without containing the
+key. The connection expires after eight hours; **Disconnect** removes it, and a
+server restart clears all such connections. The app does not put the key into
+local storage, runtime files or output receipts. Browser requests never fall
+back to a server owner's `FAL_KEY`.
+
+Disconnecting prevents new requests through that connection. Work already
+submitted continues with the credential captured when it started. If a restart
+interrupts an acknowledged generation, reconnect the same key to check and
+recover that request. The app does not purchase a replacement.
+
+On a shared host, this means trusting its operator with your key while connected.
+Run your own copy if you prefer to keep that boundary on your computer. The repo
+includes small [F1 documentation previews](assets/README.md), with separate
+attribution. It includes no provider credits or full source recordings.
+
+On Linux, install Python 3.12, Node.js 22 or newer, FFmpeg and FFprobe with your
+distribution's package manager, then run the same bootstrap and server commands.
+FFmpeg builds vary; `doctor.py` must pass before importing AV1 sources. Docker is
+another option if your distribution's packages lack the required codecs.
 
 ## Use
 
-1. Search for a video or paste its YouTube link, then import it.
+1. Connect your Fal account, then search for a video or paste its YouTube link and import it.
 2. Scrub the full video and click **Use this frame** on the desired moment.
 3. Generate the orbit, review the completed edit, and download it.
 
-### Optional Reactor remixes
+## Optional Reactor remixes
 
 Add `REACTOR_API_KEY` to the server environment or private `.env.local` file to
 enable Reactor X2 edits of finished highlights. Shared Docker deployments can
-include it in the private `.env` file. It is separate from `FAL_KEY`; neither key
-belongs in the browser, repository or image build arguments.
+include it in the private `.env` file. This key is separate from each visitor's
+Fal connection. Keep it out of the repository, browser bundle and image build
+arguments. Anyone with access to the shared app can use the configured Reactor
+account's credits.
 
 Step 4 offers a live preview. Choose one finished clip, click **Start live preview**,
 then switch **Day** and **Night** while Reactor streams its edited video back.
@@ -82,11 +87,15 @@ The pinned `reactor-sdk==1.5.1` is installed by bootstrap and Docker. Its Linux
 wheels require glibc 2.34 or newer; the Debian trixie image satisfies that floor.
 No microphone or speaker device dependency is needed.
 
+## Import behavior
+
 Titles containing the whole word `football`, ignoring case, receive suggestions
 from caption cues and audio energy. Other titles skip captions and audio analysis
 and open manual selection. A loud audio peak is not a confirmed crowd detection.
 Download progress reports the current video or audio stream, followed by named
 verification and preview stages. Estimates remain unknown when yt-dlp omits them.
+
+## Orbit audio
 
 Default orbit audio uses checked stereo source atmosphere. If a source cannot
 provide suitable atmosphere, assembly asks for a configured recording; no borrowed
@@ -109,8 +118,9 @@ The Dockerfile installs Python 3.12, Node.js 24, FFmpeg with fast AV1 decoding, 
 Python dependencies and the verified speech model. Model/tool files live outside
 the writable `/data` volume. It runs as a non-root user.
 
-Copy `.env.example` to `.env` and fill in your Fal key, a password of at least
-16 characters, and the browser origin. For a local protected Docker check use
+Copy `.env.example` to `.env` and fill in a password of at least 16 characters
+and the browser origin. Users connect their own Fal key in the page after login.
+For a local protected Docker check use
 `PUBLIC_ORIGIN=http://localhost:8476`; open that exact address after starting it.
 
 ```sh
@@ -121,20 +131,20 @@ docker run --rm --env-file .env \
   world-model-clips
 ```
 
-For a shared host, supply `FAL_KEY`, `DEMO_PASSWORD` and the exact HTTPS
+For a shared host, supply `DEMO_PASSWORD` and the exact HTTPS
 `PUBLIC_ORIGIN` in the private environment file. Terminate HTTPS at a reverse
 proxy forwarding to port 8476. The shared password gates the same workspace and
-Fal account; this is not a multi-user tenant service. Public hosting requirements
-are enforced by the server configuration.
+saved media. Fal credentials are separate per browser connection, but project
+files and outputs are still shared. This is not a tenant-isolated service.
+Public hosting requirements are enforced by the server configuration.
 
-Run the image build and container checks in the deployment environment before
-publishing a host. Docker was not available on the development machine.
+CI builds the image and checks a protected container with a fresh data volume.
+Run those checks in your deployment environment as well before publishing a host.
 
 ## Configuration
 
 | Variable | Purpose |
 | --- | --- |
-| `FAL_KEY` | Server-side Fal API key |
 | `REACTOR_API_KEY` | Optional server-side Reactor key for X2 remixes |
 | `FOOTBALL_DATA_DIR` | Persistent sources, jobs and exports; defaults to `.runtime` |
 | `FOOTBALL_YTDLP` | Optional yt-dlp executable path |
@@ -148,12 +158,30 @@ Keep persistent data separate from the source checkout. Imports preserve origina
 streams and previous edits. Stopping waits for active workers; restarting does
 not submit another generation for an ambiguous or failed request.
 
+Advanced direct Python use of `fal_camera.py` can read `FAL_KEY` from the process
+environment or private `.env.local`. That adapter fallback is unavailable to
+browser HTTP requests. It is deliberately absent from `.env.example`.
+
+The optional CLI uses `FAL_KEY` explicitly exported in its own terminal process.
+It creates a temporary connection, submits the selected saved frame, then removes
+that connection. It cannot borrow the browser or server owner's key. With the
+local server running and your key already exported:
+
+```sh
+.venv/bin/python orbit.py run --video-id YOUR_VIDEO_ID
+.venv/bin/python orbit.py status JOB_ID --wait
+```
+
+`status` only reads an existing job and needs no key. A shared server with demo
+authentication uses the signed-in browser interface instead of this local CLI.
+
 ## Checks
 
 ```sh
 .venv/bin/python doctor.py --model
 .venv/bin/python -m unittest discover -v -p 'test_*.py'
-node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js
+node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js
+node --test ui/live-client/test_controller.mjs
 .venv/bin/python build_ui.py
 ```
 

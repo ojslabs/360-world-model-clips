@@ -24,6 +24,7 @@ import media
 import demo_auth
 from runtime_paths import data_dir
 import download_progress
+import fal_credentials
 
 ROOT = Path(__file__).resolve().parent
 DATA = data_dir(ROOT)
@@ -47,9 +48,20 @@ class LabelBusy(ValueError):
     pass
 
 
-def generation_status():
+INTERNAL_CREDENTIAL = object()
+
+
+def generation_status(credential=INTERNAL_CREDENTIAL):
     import fal_camera
-    status = fal_camera.status()
+    if credential is INTERNAL_CREDENTIAL:
+        status = fal_camera.status()
+    else:
+        status = fal_camera.status(credential_key=credential.key if credential else None)
+        status.update(authenticated=bool(credential and credential.verified),
+                      credential_source="browser", checked_at=None,
+                      message=("Your Fal key is connected." if credential and credential.verified else
+                               "Key connected; generation access is checked on the first request." if credential else
+                               "Connect your Fal API key before generating."))
     if media.read_json(DATA / "generation-settings.json", {}).get("paused"):
         status.update(ready=False, paused=True,
                       message="Fal generation is paused. Existing videos remain available to review.")
@@ -284,9 +296,11 @@ def reconcile_jobs():
                     acknowledged = receipt.get("request_id")
                     if isinstance(acknowledged, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", acknowledged):
                         run.update(request_id=acknowledged, recovery_available=True)
-                        if run.get("provider") == "Fal":
+                        if run.get("provider") == "Fal" and run.get("credential_source") != "browser":
                             recovery.append((video_id, run["id"]))
                     run.update(status="interrupted", error="Server restarted. The existing run was retained and no generation was resubmitted.")
+                    if run.get("credential_source") == "browser":
+                        run.update(requires_credential=True, error="Reconnect the same Fal key to resume this saved request.")
                 media.write_json(location / "run.json", run)
             media.write_json(path, project)
         for job_id in list(JOBS):
@@ -307,6 +321,32 @@ def reconcile_jobs():
             media.write_json(manifest(video_id), project)
         task("Resume saved orbit", lambda v=video_id, r=run_id: execute_generation(v, r, resume_only=True),
              job_id=job_id, video_id=video_id, run_id=run_id, executor=GENERATION_POOL)
+
+
+def resume_browser_generations(credential):
+    """Resume acknowledged requests only, under the original browser key owner."""
+    resumed = []
+    with LOCK:
+        for path in (DATA / "sources").glob("*/project.json"):
+            project = media.read_json(path)
+            for run in project.get("generations", []):
+                if (run.get("credential_source") != "browser"
+                        or run.get("credential_owner") != credential.fingerprint
+                        or run.get("status") != "interrupted" or not run.get("recovery_available")):
+                    continue
+                receipt = media.read_json(path.parent / "exports" / run["id"] / "fal-request.json", {})
+                if not receipt.get("request_id"):
+                    continue
+                video_id, run_id = path.parent.name, run["id"]
+                job_id = run.get("job_id") or uuid.uuid4().hex[:12]
+                run.update(status="queued", job_id=job_id, requires_credential=False)
+                run.pop("error", None)
+                media.write_json(path.parent / "exports" / run_id / "run.json", run)
+                media.write_json(path, project)
+                resumed.append(task("Resume saved world model clip",
+                    lambda v=video_id, r=run_id: execute_generation(v, r, resume_only=True, credential=credential),
+                    job_id=job_id, video_id=video_id, run_id=run_id, executor=GENERATION_POOL))
+    return resumed
 
 
 def task(kind, operation, *, job_id=None, video_id=None, run_id=None, executor=None, metadata=None):
@@ -371,7 +411,7 @@ def start_import(video_id, capabilities):
                     video_id=video_id, metadata={"operation": "import"})
 
 
-def start_label(video_id, item_id, source_time):
+def start_label(video_id, item_id, source_time, *, credential=None):
     import action_labels
     if isinstance(source_time, bool) or not isinstance(source_time, (int, float)) or not math.isfinite(source_time):
         raise ValueError("Choose a finite video time.")
@@ -413,7 +453,8 @@ def start_label(video_id, item_id, source_time):
                           "confidence": "low", "request_submitted": False}
             else:
                 result = action_labels.label_moment(source_path(video_id), source_time,
-                    folder(video_id) / "action-labels", frame_path=frame_path, timeout=remaining)
+                    folder(video_id) / "action-labels", frame_path=frame_path, timeout=remaining,
+                    **({"credential_key": credential.key} if credential else {}))
             with LOCK:
                 current = load_project(video_id)
                 item = next((c for c in current["candidates"] if c["id"] == item_id), None)
@@ -756,10 +797,10 @@ def export_sources(video_id, combined):
     return result
 
 
-def start_generation(video_id, mode, reference_run_id=None, *, item_id=None):
+def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, credential=None):
     if mode != "fal-h3-max":
         raise ValueError("Choose Fal H3 Max camera controls.")
-    connection = generation_status()
+    connection = generation_status(credential) if credential else generation_status()
     if connection.get("paused"):
         raise ValueError("Fal generation is paused. No request was submitted.")
     if not connection["ready"]:
@@ -805,13 +846,15 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None):
         prompt = media.ORBIT_PRESET["input"]["prompt"]
         record = {"id": run_id, "job_id": job_id, "video_id": video_id,
                   "status": "queued", "created_at": time.time(), "kind": "World model clip",
-                  "model": generation_status()["model"], "provider": "Fal", "item_id": item["id"],
+                  "model": connection["model"], "provider": "Fal", "item_id": item["id"],
                   "freeze_time": item["freeze_time"], "tail_seconds": item.get("tail_seconds", media.DEFAULTS["tail_seconds"]),
                   "lead_seconds": media.DEFAULTS["lead_seconds"],
                   "frame_sha256": hashlib.sha256(frame_path.read_bytes()).hexdigest(),
                   "preset_id": media.ORBIT_PRESET["id"],
                   "delivery": dict(media.ORBIT_PRESET.get("delivery", {})),
                   "prompt": prompt, "exact_camera_controls": True}
+        if credential:
+            record.update(credential_source="browser", credential_owner=credential.fingerprint)
         if reference_run_id is not None:
             record["reference_run_id"] = reference_run_id
         label = item.get("action_label", {})
@@ -821,17 +864,26 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None):
         media.write_json(target / "run.json", record)
         media.write_json(manifest(video_id), project)
 
-    result = task("Generate with world models", lambda: execute_generation(video_id, run_id),
+    result = task("Generate with world models", lambda: execute_generation(video_id, run_id, **({"credential": credential} if credential else {})),
                   job_id=job_id, video_id=video_id, run_id=run_id, executor=GENERATION_POOL)
     result.update(run_id=run_id, video_id=video_id)
     return result
 
 
-def execute_generation(video_id, run_id, *, resume_only=False):
+def execute_generation(video_id, run_id, *, resume_only=False, credential=None):
     snapshot = read_run(video_id, run_id)
     target = folder(video_id) / "exports" / run_id
     frame_path = target / "frame.png"
     prompt = snapshot["prompt"]
+
+    def credential_options():
+        if snapshot.get("credential_source") == "browser":
+            if not credential or credential.fingerprint != snapshot.get("credential_owner"):
+                raise fal_credentials.CredentialError("Reconnect the same Fal key to resume this saved request.")
+            return {"credential_key": credential.key}
+        if credential:
+            raise fal_credentials.CredentialError("This saved request belongs to a different credential owner.")
+        return {}
 
     def save(**changes):
         with LOCK:
@@ -871,13 +923,13 @@ def execute_generation(video_id, run_id, *, resume_only=False):
                 receipt = media.read_json(target / "fal-request.json", {})
                 if not receipt.get("request_id"):
                     raise ValueError("The saved run has no acknowledged request to resume.")
-                if receipt.get("stage") in {"completed", "complete", "normalizing"} and any(
+                if receipt.get("stage") in {"completed", "complete", "downloading", "normalizing"} and any(
                         (target / name).is_file() for name in ("fal-camera-native.mp4", "fal-camera.mp4")):
                     result = fal_camera.recover_local(target)
                 else:
-                    result = fal_camera.generate(frame_path, target, prompt, seconds=receipt["seconds"], resume_only=True)
+                    result = fal_camera.generate(frame_path, target, prompt, seconds=receipt["seconds"], resume_only=True, **credential_options())
             else:
-                result = fal_camera.generate(frame_path, target, prompt, seconds=media.DEFAULTS["orbit_seconds"])
+                result = fal_camera.generate(frame_path, target, prompt, seconds=media.DEFAULTS["orbit_seconds"], **credential_options())
             output = Path(result["path"]).resolve()
             if not output.is_relative_to(target.resolve()) or output.suffix != ".mp4":
                 raise ValueError("The generator did not produce a local MP4 in this run.")
@@ -892,12 +944,13 @@ def execute_generation(video_id, run_id, *, resume_only=False):
             # Provider internals may contain signed URLs. Keep public errors generic.
             detail = str(error)
             try:
-                detail = detail.replace(fal_camera.api_key(), "[credential]")
+                detail = detail.replace(credential.key if credential else
+                    fal_camera.api_key(None if snapshot.get("credential_source") == "browser" else fal_camera.ENV_CREDENTIAL), "[credential]")
             except Exception:
                 pass
             detail = re.sub(r"https?://\S+|rk_[A-Za-z0-9]+|eyJ[A-Za-z0-9_.-]+", "[redacted]", detail)
             media.write_json(target / "diagnostic.json", {"type": type(error).__name__, "detail": detail[-1600:]})
-            message = (str(error) if isinstance(error, fal_camera.FalResolutionError) else
+            message = (str(error) if isinstance(error, (fal_camera.FalResolutionError, fal_credentials.CredentialError)) else
                        "Fal did not complete this orbit. No automatic resubmission was made.")
             save(status="failed", error=message)
             raise RuntimeError(message) from None
@@ -1233,17 +1286,24 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-    def send_json(self, value, status=200):
+    def send_json(self, value, status=200, *, headers=()):
         raw = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in headers:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(raw)
 
     def trusted(self):
         return demo_auth.trusted(self)
+
+    def credential_origin(self):
+        origin = self.headers.get("Origin", "")
+        host = self.headers.get("Host", "")
+        return origin in {"http://" + host, "https://" + host} and self.trusted()
 
     def serve_file(self, path, head=False):
         if not path.is_file():
@@ -1310,9 +1370,14 @@ class Handler(BaseHTTPRequestHandler):
                     projects = [public_project(p.parent.name) for p in sorted((DATA / "sources").glob("*/project.json"))]
                     jobs = compact_jobs()
                 self.send_json({"projects": projects, "jobs": jobs, "defaults": media.DEFAULTS,
-                                "generation": generation_status(), "seed": SEED,
+                                "generation": generation_status(fal_credentials.get(self.headers.get("Cookie"))), "seed": SEED,
+                                "fal_credentials": fal_credentials.status(self.headers.get("Cookie")),
                                 "workspace_reset": media.read_json(DATA / "workspace-reset.json", {}).get("id"),
-                                "action_labeling": {"ready": generation_status().get("configured", False)}})
+                                "action_labeling": {"ready": fal_credentials.get(self.headers.get("Cookie")) is not None}})
+            elif path == "/api/credentials/fal":
+                self.send_json(fal_credentials.status(self.headers.get("Cookie")))
+            elif path == "/api/generation/check":
+                self.send_json(generation_status(fal_credentials.get(self.headers.get("Cookie"))))
             elif path == "/api/activity":
                 self.send_json({"jobs": compact_jobs(), "server_time": time.time()})
             elif path == "/api/remix-presets":
@@ -1365,6 +1430,23 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError("Send a JSON object.")
             path = urlparse(self.path).path
+            if path in {"/api/credentials/fal", "/api/credentials/fal/clear"}:
+                if not self.credential_origin():
+                    self.send_json({"error": "Use this page's same-origin key form."}, 403)
+                    return
+                cookie = self.headers.get("Cookie")
+                secure = self.headers.get("Origin", "").startswith("https://")
+                if path.endswith("/clear"):
+                    fal_credentials.clear(cookie)
+                    header = fal_credentials.cookie_header(secure=secure, clear=True)
+                    result = {"configured": False, "verified": False}
+                else:
+                    token, credential = fal_credentials.set_key(cookie, data.get("key"))
+                    header = fal_credentials.cookie_header(token, secure=secure)
+                    result = fal_credentials.status(f"{fal_credentials.COOKIE_NAME}={token}")
+                    resume_browser_generations(credential)
+                self.send_json(result, headers=[("Set-Cookie", header)])
+                return
             if path == "/api/search":
                 result = task("Search YouTube", lambda: search(data.get("query", "")), executor=SEARCH_POOL)
             elif path == "/api/import":
@@ -1381,14 +1463,15 @@ class Handler(BaseHTTPRequestHandler):
                               float(data["time"]), float(data.get("tail", media.DEFAULTS["tail_seconds"]))),
                               video_id=data["video_id"], executor=INTERACTIVE_POOL)
             elif path == "/api/label":
-                result = start_label(data["video_id"], data["item_id"], data["time"])
+                result = start_label(data["video_id"], data["item_id"], data["time"],
+                                     credential=fal_credentials.require(self.headers.get("Cookie")))
             elif path == "/api/export":
                 result = task("Export source cut-ups", lambda: export_sources(data["video_id"], bool(data.get("combined"))))
             elif path == "/api/generation/check":
-                result = generation_status()
+                result = generation_status(fal_credentials.get(self.headers.get("Cookie")))
             elif path == "/api/generate":
                 result = start_generation(data["video_id"], data.get("mode"), data.get("reference_run_id"),
-                                          item_id=data.get("item_id"))
+                                          item_id=data.get("item_id"), credential=fal_credentials.require(self.headers.get("Cookie")))
             elif path == "/api/assemble":
                 result = start_assembly(data["video_id"], data["run_id"],
                                         data.get("tail_seconds", media.DEFAULTS["tail_seconds"]))

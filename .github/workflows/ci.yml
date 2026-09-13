@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m unittest discover -v -p 'test_*.py'
           node --check ui/app.js
-          node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js
+          node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js
           node --test ui/live-client/test_controller.mjs
           python build_ui.py
   container:

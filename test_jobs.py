@@ -170,9 +170,11 @@ class DurableJobTests(unittest.TestCase):
         handler.rfile = io.BytesIO(body)
         handler.trusted = Mock(return_value=True)
         handler.send_json = Mock()
-        with patch.object(server, "start_generation", return_value={"job_id": "job", "run_id": "run"}) as start:
+        credential = server.fal_credentials.Credential("offline-test-browser-key", "test-owner", 9999999999)
+        with patch.object(server.fal_credentials, "require", return_value=credential), \
+                patch.object(server, "start_generation", return_value={"job_id": "job", "run_id": "run"}) as start:
             handler.do_POST()
-        start.assert_called_once_with(server.SEED, "fal-h3-max", None, item_id="active-cut")
+        start.assert_called_once_with(server.SEED, "fal-h3-max", None, item_id="active-cut", credential=credential)
         handler.send_json.assert_called_once_with({"job_id": "job", "run_id": "run"})
 
     def test_process_lock_prevents_a_second_server_until_workers_release_ownership(self):

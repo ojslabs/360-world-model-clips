@@ -34,6 +34,7 @@ ACTIVE_POLL_SECONDS = 1
 MAX_VIDEO_BYTES = 512 * 1024 * 1024
 DOWNLOAD_PROGRESS_SECONDS = .35
 LOCK = threading.RLock()
+ENV_CREDENTIAL = object()
 
 
 class FalError(RuntimeError):
@@ -49,7 +50,12 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def api_key():
+def api_key(credential_key=ENV_CREDENTIAL):
+    if credential_key is not ENV_CREDENTIAL:
+        if (not isinstance(credential_key, str) or not credential_key
+                or any(c.isspace() for c in credential_key)):
+            raise FalError("Connect your Fal API key before generating.")
+        return credential_key
     value = os.environ.get("FAL_KEY", "").strip()
     if not value:
         path = ROOT / ".env.local"
@@ -66,12 +72,12 @@ def api_key():
     return value
 
 
-def status():
+def status(credential_key=ENV_CREDENTIAL):
     configured = False
     verified = False
     checked_at = None
     try:
-        key = api_key()
+        key = api_key(credential_key)
         configured = True
         saved = media.read_json(data_dir(ROOT) / "fal-status.json", {})
         if saved.get("key_fingerprint") == hashlib.sha256(key.encode()).hexdigest():
@@ -433,7 +439,8 @@ def recover_local(output_dir, *, on_progress=None):
         return _finish_local(target, receipt, seconds, time.monotonic() + 300, on_progress)
 
 
-def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on_progress=None):
+def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on_progress=None,
+             credential_key=ENV_CREDENTIAL):
     """Submit once per output directory; later calls resume the recorded request.
 
     A timeout never cancels or resubmits a paid request. A submit without an
@@ -455,7 +462,8 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
             image.verify()
     except Exception:
         raise FalError("Save a valid 16:9 PNG freeze frame before using Fal camera controls.") from None
-    key = api_key()
+    key = api_key(credential_key)
+    credential_owner = hashlib.sha256(("fal-browser-v1\0" + key).encode()).hexdigest()
     request = media.orbit_request("data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii"))
     request.update(prompt=prompt, duration=seconds)
     fingerprint = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
@@ -469,6 +477,9 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
         if receipt_path.exists():
             try:
                 receipt = media.read_json(receipt_path)
+                if receipt.get("credential_source") == "browser" and (
+                        credential_key is ENV_CREDENTIAL or receipt.get("credential_owner") != credential_owner):
+                    raise FalError("Reconnect the original Fal key to resume this saved request.")
                 # Acknowledged runs retain their own camera settings and resolution.
                 # Reconstruct the hash with the supplied frame, prompt and duration
                 # so a preset upgrade cannot block read-only historical recovery.
@@ -492,6 +503,8 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
                        "frame_sha256": hashlib.sha256(image_bytes).hexdigest(),
                        "seconds": seconds, "exact_camera_controls": True,
                        "parameters": {k: v for k, v in request.items() if k not in {"image_url", "prompt"}}}
+            if credential_key is not ENV_CREDENTIAL:
+                receipt.update(credential_source="browser", credential_owner=credential_owner)
             receipt["stage_transitions"] = [{"stage": "submitting", "at": receipt["stage_started_at"]}]
             try:
                 with receipt_path.open("x") as stream:
@@ -552,7 +565,8 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
         finished = _finish_local(target, receipt, seconds, deadline, on_progress)
     # The server's public run projection deliberately does not copy this field.
     finished["expanded_prompt"] = receipt.get("expanded_prompt")
-    _persist(data_dir(ROOT) / "fal-status.json", {
-        "key_fingerprint": hashlib.sha256(key.encode()).hexdigest(),
-        "authenticated": True, "checked_at": int(time.time()), "model": MODEL})
+    if credential_key is ENV_CREDENTIAL:
+        _persist(data_dir(ROOT) / "fal-status.json", {
+            "key_fingerprint": hashlib.sha256(key.encode()).hexdigest(),
+            "authenticated": True, "checked_at": int(time.time()), "model": MODEL})
     return finished

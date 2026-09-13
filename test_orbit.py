@@ -11,11 +11,21 @@ import orbit
 class OrbitTests(unittest.TestCase):
     def invoke(self, args, responses):
         output, errors = io.StringIO(), io.StringIO()
-        with patch.object(orbit, "api", side_effect=responses) as api, \
+        replies = iter(responses)
+        def respond(path, *args, **kwargs):
+            if path.startswith("/api/credentials/"):
+                return {"configured": not path.endswith("/clear")}
+            value = next(replies)
+            if isinstance(value, BaseException):
+                raise value
+            return value
+        with patch.object(orbit, "api", side_effect=respond) as api, \
+             patch.dict(orbit.os.environ, {"FAL_KEY": "offline-cli-key"}, clear=True), \
              patch.object(orbit.time, "sleep"), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             code = orbit.main(args)
-        return code, output.getvalue(), errors.getvalue(), api.call_args_list
+        return code, output.getvalue(), errors.getvalue(), [c for c in api.call_args_list
+            if not c.args[0].startswith("/api/credentials/")]
 
     def test_run_reads_seed_submits_once_and_prints_local_result(self):
         code, out, err, calls = self.invoke(["run"], [
@@ -134,6 +144,56 @@ class OrbitTests(unittest.TestCase):
             self.assertEqual(caught.exception.http_status, 404)
             self.assertEqual(str(caught.exception), "Unknown job")
             opener.return_value.open.assert_called_once()
+
+
+class CliCredentialTests(unittest.TestCase):
+    def test_submission_connects_once_passes_one_memory_jar_and_revokes_after_ack(self):
+        jars = []
+        def response(path, data, *, cookie_jar):
+            jars.append(cookie_jar)
+            return {"job_id": "saved"} if path == "/api/generate" else {"configured": True}
+        with patch.dict(orbit.os.environ, {"FAL_KEY": "offline-cli-key"}, clear=True), \
+                patch.object(orbit, "api", side_effect=response) as api:
+            self.assertEqual(orbit.submit_generation("C9sL5j_iUiE"), {"job_id": "saved"})
+        self.assertEqual([c.args[0] for c in api.call_args_list],
+                         ["/api/credentials/fal", "/api/generate", "/api/credentials/fal/clear"])
+        self.assertEqual(api.call_args_list[0].args[1], {"key": "offline-cli-key"})
+        self.assertTrue(all(jar is jars[0] for jar in jars))
+        self.assertEqual(list(jars[0]), [])
+
+    def test_missing_process_key_never_calls_server_or_reads_environment_files(self):
+        with patch.dict(orbit.os.environ, {}, clear=True), patch.object(orbit, "api") as api:
+            with self.assertRaisesRegex(orbit.OrbitError, "Set FAL_KEY explicitly"):
+                orbit.submit_generation("C9sL5j_iUiE")
+        api.assert_not_called()
+
+    def test_ambiguous_submit_is_not_retried_and_key_is_revoked_without_printing_it(self):
+        with patch.dict(orbit.os.environ, {"FAL_KEY": "offline-cli-key"}, clear=True), \
+                patch.object(orbit, "api", side_effect=[{"configured": True},
+                    orbit.OrbitError("failed offline-cli-key"), {"configured": False}]) as api:
+            with self.assertRaises(orbit.OrbitError) as raised:
+                orbit.submit_generation("C9sL5j_iUiE")
+        self.assertNotIn("offline-cli-key", str(raised.exception))
+        self.assertEqual([c.args[0] for c in api.call_args_list],
+                         ["/api/credentials/fal", "/api/generate", "/api/credentials/fal/clear"])
+
+    def test_status_uses_no_key_or_credential_mutation(self):
+        with patch.dict(orbit.os.environ, {}, clear=True), \
+                patch.object(orbit, "api", return_value={"status": "running"}) as api, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(orbit.main(["status", "saved-job"]), 0)
+        api.assert_called_once_with("/api/jobs/saved-job")
+
+    def test_post_has_same_origin_and_an_in_memory_cookie_processor(self):
+        jar = orbit.CookieJar()
+        with patch.object(orbit, "build_opener") as opener:
+            opener.return_value.open.side_effect = URLError("offline")
+            with self.assertRaises(orbit.OrbitError):
+                orbit.api("/api/credentials/fal", {"key": "offline-cli-key"}, cookie_jar=jar)
+        self.assertEqual(opener.return_value.open.call_args.args[0].get_header("Origin"), orbit.BASE_URL)
+        processors = [h for h in opener.call_args.args if isinstance(h, orbit.HTTPCookieProcessor)]
+        self.assertEqual(len(processors), 1)
+        self.assertIs(processors[0].cookiejar, jar)
 
 
 if __name__ == "__main__":

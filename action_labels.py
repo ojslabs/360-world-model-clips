@@ -20,6 +20,7 @@ from pathlib import Path
 from PIL import Image, ImageOps, ImageDraw
 
 import media
+import fal_camera
 
 MODEL = "google/gemini-2.5-flash"
 ENDPOINT = "openrouter/router/vision"
@@ -109,12 +110,12 @@ def _contact_sheet(source, source_time, frame_bytes, deadline):
     return output.getvalue(), times
 
 
-def _infer(image_bytes, deadline):
+def _infer(image_bytes, deadline, credential_key=fal_camera.ENV_CREDENTIAL):
     import fal_camera
     payload = {"image_urls": ["data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")],
                "model": MODEL, "prompt": PROMPT, "max_tokens": 256, "temperature": 0,
                "reasoning": False, "enable_web_search": False}
-    request = json.dumps({"key": fal_camera.api_key(), "endpoint": ENDPOINT, "payload": payload,
+    request = json.dumps({"key": fal_camera.api_key(credential_key), "endpoint": ENDPOINT, "payload": payload,
                           "timeout": _remaining(deadline)}).encode()
     result = subprocess.run([sys.executable, "-c", HTTP_WORKER], input=request,
                             capture_output=True, timeout=_remaining(deadline), check=True)
@@ -156,7 +157,8 @@ def _parse(output):
     return {"status": "complete", "label": label.strip(), "confidence": confidence, "evidence": evidence}
 
 
-def label_moment(source_path, source_time, cache_dir, *, frame_path=None, timeout=TIMEOUT_SECONDS):
+def label_moment(source_path, source_time, cache_dir, *, frame_path=None, timeout=TIMEOUT_SECONDS,
+                 credential_key=fal_camera.ENV_CREDENTIAL):
     """Label one source moment within ten seconds; identical requests never re-submit.
 
     Confidence is the model's assessment, not a calibrated probability. A supplied
@@ -213,14 +215,19 @@ def label_moment(source_path, source_time, cache_dir, *, frame_path=None, timeou
             (cache / f"{identifier}.jpg").write_bytes(sheet)
             result.update(frame_times=times, request_submitted=True)
             _persist(receipt_path, result)
-            response = _infer(sheet, deadline)
+            response = (_infer(sheet, deadline) if credential_key is fal_camera.ENV_CREDENTIAL else
+                        _infer(sheet, deadline, credential_key=credential_key))
             _persist(cache / f"{identifier}.response.json", {"output": response})
             result.update(_parse(response))
         except (TimeoutError, subprocess.TimeoutExpired):
             result.update(status="timeout", message="The visual check exceeded ten seconds. No retry was submitted.")
         except Exception as error:
+            detail = str(error)
+            if isinstance(credential_key, str):
+                detail = detail.replace(credential_key, "[credential]")
+            detail = re.sub(r"https?://\S+|eyJ[A-Za-z0-9_.-]+", "[private detail]", detail)
             _persist(cache / f"{identifier}.diagnostic.json", {"type": type(error).__name__,
-                                                              "message": str(error)[:400]})
+                                                              "message": detail[:400]})
             result.update(status="uncertain", message="The visual check did not identify this action. No retry was submitted.")
         result["elapsed_seconds"] = round(time.monotonic() - started, 3)
         _persist(receipt_path, result)

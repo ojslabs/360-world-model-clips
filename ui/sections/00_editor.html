@@ -7,6 +7,22 @@
   <div id="app-update-notice" class="app-update-notice" role="status" hidden><span>A new app version is ready.</span><button id="update-app" class="secondary" type="button">Update app</button></div>
   <main>
     <section class="source-section" aria-labelledby="source-heading">
+      <div id="fal-account" class="fal-account" role="group" aria-labelledby="fal-account-heading">
+        <div class="fal-account-copy">
+          <div class="fal-account-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"></path></svg><h2 id="fal-account-heading">Your Fal account</h2><span id="fal-key-badge" class="fal-key-badge">Not connected</span></div>
+          <p class="quiet">Generate with H3 Max using your own Fal credits.</p>
+          <p id="fal-key-privacy" class="fal-key-privacy quiet">Your key stays in temporary server memory for this browser. It is removed when you disconnect, the session expires or the server restarts.</p>
+        </div>
+        <div class="fal-account-controls">
+          <form id="fal-key-form" class="fal-key-form">
+            <label for="fal-key">Fal API key</label>
+            <div class="fal-key-input-row"><div class="fal-key-input-wrap"><input id="fal-key" type="password" placeholder="Paste your API key" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="512" aria-describedby="fal-key-privacy fal-key-status" required><button id="fal-key-reveal" class="text-button" type="button" aria-label="Show API key" aria-pressed="false">Show</button></div><button id="fal-key-connect" type="submit">Connect Fal</button></div>
+            <div class="fal-key-links"><a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener noreferrer">Get a Fal API key ↗</a><button id="fal-key-cancel" class="text-button" type="button" hidden>Cancel</button></div>
+          </form>
+          <div id="fal-key-connected" class="fal-key-connected" hidden><span>Generation uses your Fal balance.</span><div><button id="fal-key-change" class="secondary" type="button">Change key</button><button id="fal-key-disconnect" class="text-button" type="button">Disconnect</button></div></div>
+          <p id="fal-key-status" class="fal-key-status quiet" role="status" aria-live="polite">Add your key when you're ready to generate. You can browse videos first.</p>
+        </div>
+      </div>
       <div class="section-row"><h1 id="source-heading">1. Choose a video</h1></div>
       <form id="search-form" class="search-bar">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg>

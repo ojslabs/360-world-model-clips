@@ -25,6 +25,7 @@ let activityTimer = null, activityAvailable = false, activitySignature = null, a
 let activityClockOffset = 0;
 let activeLocalJobs = 0;
 let workspaceResetEpoch = 0;
+let falKeyBusy = false, falKeyEditing = false, falKeyNotice = "", falKeyError = false, falCredentialRevision = 0;
 let loginRedirecting = false;
 const project = () => state.projects.find((p) => p.id === projectId);
 const active = () => project()?.candidates?.find((c) => c.id === activeId);
@@ -296,6 +297,90 @@ function localJobPollInterval({ readCount, consecutiveReadErrors }) {
   return [250, 250, 500, 500, 1000, 1500, 2000][readCount - 1] ?? 3000;
 }
 async function safely(operation) { try { await operation(); } catch (error) { status(error.message); } }
+function renderFalCredentials() {
+  const configured = state.fal_credentials?.configured === true;
+  const editing = !configured || falKeyEditing;
+  $("fal-account").dataset.connected = String(configured);
+  $("fal-account").setAttribute("aria-busy", String(falKeyBusy));
+  $("fal-key-form").hidden = !editing;
+  $("fal-key-connected").hidden = editing;
+  $("fal-key-cancel").hidden = !configured;
+  $("fal-key-badge").textContent = configured ? "Connected" : "Not connected";
+  for (const id of ["fal-key", "fal-key-connect", "fal-key-reveal", "fal-key-change", "fal-key-disconnect", "fal-key-cancel"]) $(id).disabled = falKeyBusy;
+  $("fal-key-connect").textContent = falKeyBusy ? "Connecting…" : "Connect Fal";
+  $("fal-key-status").dataset.error = String(falKeyError);
+  $("fal-key-status").textContent = falKeyNotice || (configured
+    ? state.fal_credentials.verified === false
+      ? "Key connected. Fal will check generation access on your first request."
+      : "Your key is connected. Disconnecting stops future requests; work already submitted will finish."
+    : "Add your key when you're ready to generate. You can browse videos first.");
+}
+function clearFalKeyInput() {
+  $("fal-key").value = "";
+  $("fal-key").type = "password";
+  $("fal-key-reveal").textContent = "Show";
+  $("fal-key-reveal").setAttribute("aria-label", "Show API key");
+  $("fal-key-reveal").setAttribute("aria-pressed", "false");
+}
+async function connectFalKey() {
+  if (falKeyBusy) return;
+  let key = $("fal-key").value.trim();
+  if (!key) { $("fal-key").focus(); return; }
+  falKeyBusy = true; falKeyError = false; falKeyNotice = "Connecting your Fal account…";
+  falCredentialRevision++;
+  clearFalKeyInput(); renderFalCredentials();
+  try {
+    const response = api("/api/credentials/fal", { key }, 20000);
+    key = "";
+    const connected = await response;
+    state.fal_credentials = connected;
+    falKeyEditing = false;
+    falKeyNotice = connected.verified === false
+      ? "Key connected. Fal will check generation access on your first request."
+      : "Your key is connected. Generation will use your Fal credits.";
+    try { await refresh(); } catch { falKeyNotice = "Your key is connected. Reconnecting to load generation controls…"; }
+  } catch (error) {
+    falKeyError = true;
+    falKeyNotice = error.status === 400 || error.status === 422
+      ? "Fal could not accept that key. Check it and try again."
+      : "Could not confirm the connection. Refresh the page to check its status before trying again.";
+  } finally {
+    key = ""; falKeyBusy = false; falCredentialRevision++; renderFalCredentials();
+  }
+}
+async function disconnectFalKey() {
+  if (falKeyBusy) return;
+  falKeyBusy = true; falKeyError = false; falKeyNotice = "Disconnecting your key…";
+  falCredentialRevision++; clearFalKeyInput(); renderFalCredentials();
+  try {
+    state.fal_credentials = await api("/api/credentials/fal/clear", {}, 10000);
+    state.generation = { ...state.generation, ready: false, configured: false };
+    state.action_labeling = { ...state.action_labeling, ready: false };
+    falKeyEditing = false;
+    falKeyNotice = "Your key was removed. Work already submitted will finish.";
+    renderSelection(); renderOutputViewer();
+  } catch {
+    falKeyError = true; falKeyNotice = "Could not confirm disconnection. Try again when the server reconnects.";
+  } finally {
+    falKeyBusy = false; falCredentialRevision++; renderFalCredentials();
+  }
+}
+$("fal-key-form").addEventListener("submit", (event) => { event.preventDefault(); void connectFalKey(); });
+$("fal-key-disconnect").addEventListener("click", () => { void disconnectFalKey(); });
+$("fal-key-change").addEventListener("click", () => {
+  falKeyEditing = true; falKeyNotice = ""; falKeyError = false; clearFalKeyInput(); renderFalCredentials(); $("fal-key").focus();
+});
+$("fal-key-cancel").addEventListener("click", () => {
+  falKeyEditing = false; falKeyNotice = ""; falKeyError = false; clearFalKeyInput(); renderFalCredentials();
+});
+$("fal-key-reveal").addEventListener("click", () => {
+  const show = $("fal-key").type === "password";
+  $("fal-key").type = show ? "text" : "password";
+  $("fal-key-reveal").textContent = show ? "Hide" : "Show";
+  $("fal-key-reveal").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+  $("fal-key-reveal").setAttribute("aria-pressed", String(show));
+});
+
 function visibleWorkspace(snapshot) {
   return JSON.stringify({ projects: snapshot.projects, defaults: snapshot.defaults, generation: snapshot.generation, action_labeling: snapshot.action_labeling });
 }
@@ -324,10 +409,16 @@ function applyWorkspaceReset(snapshot) {
   return true;
 }
 async function refresh({ onlyChanged = false } = {}) {
+  const credentialRevision = falCredentialRevision;
   const snapshot = await api("/api/state", undefined, 20000);
+  if (credentialRevision !== falCredentialRevision) {
+    snapshot.fal_credentials = state.fal_credentials; snapshot.generation = state.generation; snapshot.action_labeling = state.action_labeling;
+  }
   const reset = applyWorkspaceReset(snapshot);
   const unchanged = !reset && visibleWorkspace(state) === visibleWorkspace(snapshot);
+  if (!falKeyBusy && state.fal_credentials?.configured !== snapshot.fal_credentials?.configured) { falKeyNotice = ""; falKeyError = false; }
   state = snapshot;
+  renderFalCredentials();
   renderActivity();
   if (onlyChanged && unchanged) { renderNewestOutput(); renderOutputRunStatus(); renderRemixes(); return; }
   if (!project()) projectId = state.projects.find((p) => p.id === state.seed)?.id || state.projects[0]?.id;
@@ -533,7 +624,7 @@ function applyAppUpdateWhenIdle() {
       || player.paused !== true || $("output-player").paused !== true || $("search-preview").open
       || /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName || "") || focused?.isContentEditable
       || pendingGenerations.size || activeLocalJobs || (state.jobs || []).some(activityIsRunning)
-      || liveSession
+      || liveSession || falKeyBusy || $("fal-key").value?.length
       || state.projects.some((source) => source.status === "preparing_preview" || (source.generations || []).some(activityIsRunning))
       || [...actionLabelQueues.values()].some((queue) => queue.active || queue.next)
       || [...(document.querySelectorAll?.("video") || [])].some((video) => !video.paused)) return false;

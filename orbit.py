@@ -1,14 +1,16 @@
-"""Run the app's saved orbit preset through its local API, without credentials."""
+"""Run the app preset using an explicit process FAL_KEY and an in-memory session."""
 from __future__ import annotations
 
 import argparse
 import json
+import os
+from http.cookiejar import CookieJar
 import re
 import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, ProxyHandler, Request, build_opener
 
 BASE_URL = "http://127.0.0.1:8476"
 WAIT_SECONDS = 20 * 60
@@ -27,7 +29,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def api(path, data=None):
+def api(path, data=None, *, cookie_jar=None):
     """One local HTTP request. Mutations are never automatically repeated."""
     if not path.startswith("/api/"):
         raise OrbitError("Only the local app API can be called.")
@@ -35,9 +37,13 @@ def api(path, data=None):
     headers = {"Accept": "application/json"}
     if body is not None:
         headers["Content-Type"] = "application/json"
+        headers["Origin"] = BASE_URL
     request = Request(BASE_URL + path, data=body, headers=headers)
     try:
-        with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=20) as response:
+        handlers = [ProxyHandler({}), NoRedirect()]
+        if cookie_jar is not None:
+            handlers.append(HTTPCookieProcessor(cookie_jar))
+        with build_opener(*handlers).open(request, timeout=20) as response:
             raw = response.read(4 * 1024 * 1024 + 1)
     except HTTPError as error:
         try:
@@ -45,6 +51,8 @@ def api(path, data=None):
             message = payload.get("error") if isinstance(payload, dict) else None
         except (ValueError, UnicodeError):
             message = None
+        if error.code == 401:
+            message = "This server requires browser sign-in. Use the signed-in app, or a local CLI server without shared-demo authentication."
         raise OrbitError(str(message or f"Local app returned HTTP {error.code}."), http_status=error.code) from None
     except (URLError, TimeoutError, OSError):
         raise OrbitError("Could not reach the local app at " + BASE_URL + ". No request was retried.") from None
@@ -57,6 +65,30 @@ def api(path, data=None):
     if not isinstance(value, dict):
         raise OrbitError("The local app returned an unexpected response.")
     return value
+
+
+def submit_generation(video_id):
+    """Use a private cookie jar for this call, then revoke its temporary key."""
+    key = os.environ.get("FAL_KEY", "")
+    if not key:
+        raise OrbitError("Set FAL_KEY explicitly in this CLI process before running. No server key is used.")
+    cookies = CookieJar()
+    connected = False
+    try:
+        status = api("/api/credentials/fal", {"key": key}, cookie_jar=cookies)
+        if not status.get("configured"):
+            raise OrbitError("The local server did not connect this Fal key.")
+        connected = True
+        return api("/api/generate", {"video_id": video_id, "mode": "fal-h3-max"}, cookie_jar=cookies)
+    except OrbitError as error:
+        raise OrbitError(str(error).replace(key, "[credential]"), http_status=error.http_status) from None
+    finally:
+        if connected:
+            try:
+                api("/api/credentials/fal/clear", {}, cookie_jar=cookies)
+            except (OrbitError, KeyboardInterrupt):
+                print("Could not clear the temporary server key session; it will expire automatically.", file=sys.stderr)
+        cookies.clear()
 
 
 def _job_id(value):
@@ -156,7 +188,7 @@ def main(argv=None):
         if args.command == "run":
             video_id = _video_id(args.video_id or api("/api/state").get("seed"))
             submitting = True
-            started = api("/api/generate", {"video_id": video_id, "mode": "fal-h3-max"})
+            started = submit_generation(video_id)
             job_id = _job_id(started.get("job_id"))
             print("Job: " + job_id, flush=True)
             if started.get("run_id") is not None:

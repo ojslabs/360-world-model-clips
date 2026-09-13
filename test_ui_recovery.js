@@ -557,7 +557,8 @@ test("three-step markup retains every wired control and collapses inspection by 
   assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
   assert.doesNotMatch(html, /768[pP]/);
   assert.match(html, /360° World Model Clips/);
-  assert.doesNotMatch(html, /\bFal\b/);
+  assert.match(html, /id="fal-account"/);
+  assert.match(html, /Fal API key/);
 });
 
 test("reload selects the newest revision of a run while preserving older edits", () => {
@@ -771,7 +772,7 @@ test("demo copy uses world models without exposing provider or request terminolo
   assert.match(html, /placeholder="Find a video"/);
   assert.match(html, /class="compact-details connection-details" hidden/);
   assert.match(html, /class="compact-details source-exports" hidden/);
-  assert.doesNotMatch(html.replace(/<[^>]+>/g, ""), /\bH3\b|\bfal\b|\bfoul\b|\bcamera\b|\btests?\b/i);
+  assert.doesNotMatch(html.replace(/      <div id="fal-account"[\s\S]*?(?=      <div class="section-row"><h1)/, "").replace(/<[^>]+>/g, ""), /\bH3\b|\bfal\b|\bfoul\b|\bcamera\b|\btests?\b/i);
 });
 
 test("workspace reset clears only app tracking, old players and the source deep link once", () => {

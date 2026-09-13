@@ -382,3 +382,29 @@ html,body,.paper.studio{background:#080808;color:var(--text)}
 .saved-remixes{margin-top:20px}
 .saved-remixes>.details-body{padding:18px}
 @media(max-width:760px){.reactor-live{padding:15px}.live-controls{flex-direction:column;align-items:stretch;gap:14px}.live-look{align-self:flex-start}.live-actions{align-items:flex-start;flex-direction:column;gap:16px}.live-buttons{width:100%}.live-buttons button:first-child{flex:1}.reactor-live-stage p{font-size:12px;padding:14px}.saved-remixes>.details-body{padding:12px}}
+
+/* Credentials sit beside their purpose and never echo a saved key. */
+.fal-account{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1fr);gap:40px;padding:24px;margin-bottom:36px;border:1px solid var(--line);border-radius:9px;background:#101010}
+.fal-account-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fal-account-title svg{width:21px;height:21px;color:var(--text2);flex-shrink:0}
+.studio .fal-account h2{font-size:18px;letter-spacing:-.025em;margin:0;font-weight:550}
+.fal-account-copy>p{margin:9px 0 0;font-size:13px}
+.fal-account-copy .fal-key-privacy{max-width:460px;font-size:11px;line-height:1.65;color:var(--muted)}
+.fal-key-badge{border:1px solid var(--line-strong);border-radius:20px;padding:3px 8px;font-size:10px;color:var(--muted);transition:color .2s,border-color .2s}
+.fal-account[data-connected=true] .fal-key-badge{color:var(--text);border-color:#777}
+.fal-account-controls{min-width:0;align-self:center}
+.fal-key-form>label{display:block;font-size:12px;margin-bottom:8px;color:var(--text2)}
+.fal-key-input-row{display:flex;gap:9px}
+.fal-key-input-wrap{display:flex;flex:1;min-width:0;align-items:center;background:#080808;border:1px solid var(--line-strong);border-radius:5px}
+.studio #fal-key{width:100%;min-width:0;flex:1;background:transparent;border:0;border-radius:5px;padding:12px;color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.4}
+.studio #fal-key-reveal{padding:8px;min-height:40px;font-size:11px;margin-right:3px;color:var(--text2)}
+.fal-key-links{display:flex;justify-content:space-between;align-items:center;margin-top:9px;min-height:24px}
+.fal-key-links a{font-size:11px;color:var(--text2)}
+.fal-key-status{font-size:11px;line-height:1.6;margin:10px 0 0;min-height:18px}
+.fal-key-status[data-error=true]{color:var(--text);padding-left:10px;border-left:2px solid var(--text2)}
+.fal-key-connected{display:flex;justify-content:space-between;align-items:center;gap:20px;font-size:12px;color:var(--text2)}
+.fal-key-connected>div{display:flex;align-items:center;gap:12px}
+.studio #fal-key-disconnect{font-size:12px;min-height:40px;padding:8px}
+@media(max-width:900px){.fal-account{grid-template-columns:1fr;gap:20px;padding:20px}.fal-account-copy .fal-key-privacy{max-width:none}}
+@media(max-width:480px){.fal-account{padding:16px;margin-bottom:28px}.fal-key-input-row{flex-wrap:wrap}.fal-key-input-wrap{flex-basis:100%}.studio #fal-key-connect{width:100%}.fal-key-connected{align-items:flex-start;flex-direction:column;gap:12px}}
+@media(prefers-reduced-motion:reduce){.fal-key-badge{transition:none}}
