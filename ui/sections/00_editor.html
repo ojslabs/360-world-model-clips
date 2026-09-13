@@ -60,6 +60,11 @@
     <section class="selection-section" aria-labelledby="selection-heading">
       <div class="section-row"><h2 id="selection-heading">3. Generate and review</h2></div>
       <div class="generation-detail">
+        <div class="orbit-picker" role="group" aria-labelledby="orbit-choice-heading">
+          <h3 id="orbit-choice-heading">Choose a move</h3>
+          <div id="orbit-choices" class="orbit-choices" role="group" aria-label="Generation move"></div>
+          <p id="orbit-choice-note" class="quiet" role="status" aria-live="polite">Loading available moves…</p>
+        </div>
         <div class="generation-action"><div><p id="generation-frame">Save a freeze frame to continue.</p><p id="timing-summary" class="quiet"></p><p id="selection-audio" class="quiet" hidden></p></div><button id="generate" title="Uses model credits" disabled>Generate with world models</button></div>
         <select id="tail" aria-label="Source continuation length" hidden></select>
         <details class="compact-details connection-details" hidden><summary>Connection</summary><div class="details-body"><p id="generation-message"></p><button id="generation-check" class="secondary">Refresh connection</button></div></details>

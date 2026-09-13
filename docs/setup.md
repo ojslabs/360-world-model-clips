@@ -53,7 +53,26 @@ another option if your distribution's packages lack the required codecs.
 
 1. Connect your Fal account, then search for a video or paste its YouTube link and import it.
 2. Scrub the full video and click **Use this frame** on the desired moment.
-3. Generate the orbit, review the completed edit, and download it.
+3. Choose **Around**, **Over & under** or **Diagonal**, generate the orbit, then review and download the completed edit.
+
+Around is the original horizontal path. The experimental Over & under choice requests a vertical loop
+relative to the source camera; Diagonal uses a 45-degree inclined loop. These
+choices share the same fixed prompt, six-second request, `1080P` output and
+distance. [orbit_paths.py](../orbit_paths.py) owns their definitions, based on
+[orbit_preset.json](../orbit_preset.json).
+
+Fal's elevation field is bounded to ±90 degrees. The vertical path changes
+azimuth at its poles with paired keyframes at the same camera position; the API
+has no roll or up-vector field to guarantee the orientation between them.
+Diagonal uses inclined-circle keyframes, but spherical interpolation can deviate
+between those positions. Check generated results before relying on either move.
+The existing F1 previews show Around only.
+
+Rerunning an output uses its immutable saved frame with the currently selected
+path. It creates a separate generation. Recovery of an interrupted request uses
+the path already saved with that request. To drive the same selection through the
+API, `POST /api/generate` accepts `orbit_path` with `around`, `over-under` or
+`diagonal`; `GET /api/state` returns the catalogue in `orbit_paths`.
 
 ## Optional Reactor remixes
 
@@ -180,13 +199,17 @@ authentication uses the signed-in browser interface instead of this local CLI.
 ```sh
 .venv/bin/python doctor.py --model
 .venv/bin/python -m unittest discover -v -p 'test_*.py'
-node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js
+node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js test_ui_orbit_paths.js
 node --test ui/live-client/test_controller.mjs
 .venv/bin/python build_ui.py
 ```
 
 Tests use local fixtures and mocked provider calls, without paid Fal or Reactor requests.
 Real media tests need the listed tools and include 4K encoding.
+For just the camera geometry and selection checks, run
+`.venv/bin/python -m unittest -v test_orbit_paths` and
+`node --test test_ui_orbit_paths.js`. These checks validate requested positions
+and application behavior; they make no paid calls or generated-motion assessment.
 
 Licensed under [MIT](../LICENSE). See [third-party notices](../THIRD_PARTY_NOTICES.md)
 for installed tools and the speech-model license. Video rights and provider

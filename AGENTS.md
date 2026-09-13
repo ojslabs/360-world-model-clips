@@ -4,7 +4,11 @@ This repository is self-contained. Build with `python build_ui.py`; `_report_kit
 owns the base HTML style and `ui/extra.css` owns the editor appearance. Use system
 fonts and preserve the content-derived build fingerprint.
 
-- `orbit_preset.json` is the sole source for the Fal model, prompt and camera path.
+- `orbit_preset.json` owns the Fal model, fixed prompt and original Around path.
+  `orbit_paths.py` derives the Around / Over & under / Diagonal choices. Keep
+  duration, resolution and distance consistent with the base preset. Describe
+  these as requested trajectories; position keyframes do not verify generated
+  motion or pole orientation. Never replace a saved run's path during recovery.
 - Never commit credentials, `.env.local`, model weights, source videos, generated
   media or runtime receipts. Keep persistent state under `FOOTBALL_DATA_DIR`.
   The explicitly approved documentation exceptions are `docs/assets/f1-orbit.gif`
@@ -45,9 +49,10 @@ fonts and preserve the content-derived build fingerprint.
   connection, for up to eight hours. Use an opaque HttpOnly cookie; never write
   keys to disk or fall back to an owner's environment key for HTTP requests.
 - Run `python -m unittest discover -v -p 'test_*.py'`,
-  `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js`,
+  `node --test test_ui_recovery.js test_ui_remix.js test_ui_live.js test_ui_credentials.js test_ui_orbit_paths.js`,
   `node --test ui/live-client/test_controller.mjs`, `python doctor.py --model`, and
   `python build_ui.py`. Inspect decoded media for picture/audio changes.
+  Focused camera geometry: `python -m unittest -v test_orbit_paths`.
 
 Keep docs limited to built behavior. Record material limits and test results
 plainly. Do not add provider credentials or private user history to examples.

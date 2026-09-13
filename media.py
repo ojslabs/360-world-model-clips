@@ -328,8 +328,10 @@ def extract_frame(source, time, target):
          "-i", source, "-frames:v", "1", "-update", "1", target])
 
 
-def orbit_request(image_url):
+def orbit_request(image_url, orbit_path="around"):
+    import orbit_paths
     request = json.loads(json.dumps(ORBIT_PRESET["input"]))
+    request["camera_trajectory"] = orbit_paths.trajectory(orbit_path, request["camera_trajectory"])
     request["image_url"] = image_url
     return request
 

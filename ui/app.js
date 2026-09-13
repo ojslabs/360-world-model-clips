@@ -4,6 +4,8 @@ const player = $("player");
 const GENERATION_STORAGE_KEY = "football-edits.pending-generations.v1";
 const PROJECT_STORAGE_KEY = "football-edits.selected-project.v1";
 const UPDATE_VIEW_STORAGE_KEY = "football-edits.update-view.v1";
+const ORBIT_PATH_STORAGE_KEY = "world-model-clips.orbit-paths.v1";
+const orbitPathSelections = new Map();
 const WORKSPACE_RESET_STORAGE_KEY = "football-edits.workspace-reset";
 const APP_BUILD = document.querySelector?.('meta[name="football-edits-build"]')?.content || null;
 let state = { projects: [] }, projectId = preferredProject(), activeId = null, previewEnd = null;
@@ -205,7 +207,8 @@ async function readGeneration(record, request = (path) => api(path, undefined, 2
     const snapshot = await request("/api/state");
     const source = snapshot.projects.find((item) => item.id === record.video_id);
     const matches = (source?.generations || []).filter((run) => run.provider === "Fal"
-      && !record.known_run_ids.includes(run.id) && run.freeze_time === record.freeze_time);
+      && !record.known_run_ids.includes(run.id) && run.freeze_time === record.freeze_time
+      && (!record.orbit_path || (run.orbit_path || "around") === record.orbit_path));
     if (matches.length !== 1) return { status: "awaiting_acknowledgement" };
     record.run_id = matches[0].id; savePendingGenerations();
   }
@@ -381,17 +384,69 @@ $("fal-key-reveal").addEventListener("click", () => {
   $("fal-key-reveal").setAttribute("aria-pressed", String(show));
 });
 
+const ORBIT_ICONS = {
+  around: '<ellipse cx="72" cy="42" rx="55" ry="18"/>',
+  'over-under': '<ellipse cx="72" cy="42" rx="19" ry="35"/>',
+  diagonal: '<ellipse cx="72" cy="42" rx="49" ry="24" transform="rotate(-38 72 42)"/>',
+};
+function orbitOptions() { return Array.isArray(state.orbit_paths?.options) ? state.orbit_paths.options : []; }
+function chosenOrbitPath() {
+  const options = orbitOptions(), key = projectId || "workspace";
+  const saved = readStored(ORBIT_PATH_STORAGE_KEY);
+  const id = orbitPathSelections.get(key) || (saved && typeof saved === "object" && !Array.isArray(saved) ? saved[key] : null);
+  return options.find((option) => option.id === id) || options.find((option) => option.id === state.orbit_paths?.default) || options[0] || null;
+}
+function chooseOrbitPath(id) {
+  if (!orbitOptions().some((option) => option.id === id)) return;
+  const key = projectId || "workspace";
+  orbitPathSelections.set(key, id);
+  const saved = readStored(ORBIT_PATH_STORAGE_KEY);
+  writeStored(ORBIT_PATH_STORAGE_KEY, { ...(saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {}), [key]: id });
+  renderOrbitChoices();
+}
+function renderOrbitChoices() {
+  const options = orbitOptions(), chosen = chosenOrbitPath(), container = $("orbit-choices");
+  const signature = JSON.stringify(options);
+  if (container.dataset.catalog !== signature) {
+    container.replaceChildren(); container.dataset.catalog = signature;
+    for (const option of options) {
+      const button = node("button", undefined, "orbit-choice secondary");
+      button.type = "button"; button.dataset.path = option.id;
+      button.setAttribute("aria-describedby", "orbit-choice-note");
+      const icon = node("span", undefined, "orbit-choice-icon");
+      icon.innerHTML = `<svg viewBox="0 0 144 84" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><g class="orbit-guide">${ORBIT_ICONS[option.id] || ORBIT_ICONS.around}</g><path class="orbit-person" d="M72 34v22m-9-15 9-7 9 7M72 56l-8 12m8-12 8 12"/><circle class="orbit-person" cx="72" cy="26" r="5"/><circle class="orbit-origin" cx="${option.id === "over-under" ? 72 : option.id === "diagonal" ? 35 : 18}" cy="${option.id === "over-under" ? 77 : option.id === "diagonal" ? 68 : 42}" r="3" fill="currentColor" stroke="none"/></svg>`;
+      const content = node("span", undefined, "orbit-choice-copy");
+      const title = node("strong"); title.textContent = option.label;
+      const description = node("span"); description.textContent = option.description;
+      content.append(title, description);
+      if (option.experimental) { const tag = node("span", undefined, "orbit-experimental"); tag.textContent = "Experimental"; content.append(tag); }
+      const check = node("span", "✓", "orbit-choice-check"); check.setAttribute("aria-hidden", "true");
+      button.append(icon, content, check);
+      button.addEventListener("click", () => chooseOrbitPath(option.id));
+      container.append(button);
+    }
+  }
+  for (const button of container.children) button.setAttribute("aria-pressed", String(button.dataset.path === chosen?.id));
+  $("orbit-choice-note").textContent = chosen
+    ? [state.orbit_paths.note || "Moves are relative to your selected image.", chosen.note].filter(Boolean).join(" ")
+    : "Loading available moves…";
+}
+function runOrbitLabel(run) {
+  return run.orbit_path_label || orbitOptions().find((option) => option.id === (run.orbit_path || state.orbit_paths?.default))?.label || "";
+}
+
 function visibleWorkspace(snapshot) {
-  return JSON.stringify({ projects: snapshot.projects, defaults: snapshot.defaults, generation: snapshot.generation, action_labeling: snapshot.action_labeling });
+  return JSON.stringify({ projects: snapshot.projects, defaults: snapshot.defaults, generation: snapshot.generation, action_labeling: snapshot.action_labeling, orbit_paths: snapshot.orbit_paths });
 }
 function applyWorkspaceReset(snapshot) {
   const reset = typeof snapshot.workspace_reset === "string" ? snapshot.workspace_reset : snapshot.workspace_reset?.id;
   if (!reset || readStored(WORKSPACE_RESET_STORAGE_KEY) === reset) return false;
   workspaceResetEpoch++;
-  for (const key of [GENERATION_STORAGE_KEY, PROJECT_STORAGE_KEY]) {
+  for (const key of [GENERATION_STORAGE_KEY, PROJECT_STORAGE_KEY, ORBIT_PATH_STORAGE_KEY]) {
     try { localStorage.removeItem(key); } catch { writeStored(key, null); }
   }
   try { sessionStorage.removeItem(UPDATE_VIEW_STORAGE_KEY); } catch { /* No pending view is retained in this tab. */ }
+  orbitPathSelections.clear();
   pendingGenerations.clear(); generationMonitors.clear(); selectedOutputs.clear(); knownOutputs.clear(); viewedOutputs.clear();
   remixDrafts.clear(); viewedRemixes.clear(); knownRemixes.clear(); pendingRemixSources.clear();
   stopLivePreview("Live preview stopped for the workspace reset."); liveClipSelections.clear();
@@ -419,6 +474,7 @@ async function refresh({ onlyChanged = false } = {}) {
   if (!falKeyBusy && state.fal_credentials?.configured !== snapshot.fal_credentials?.configured) { falKeyNotice = ""; falKeyError = false; }
   state = snapshot;
   renderFalCredentials();
+  renderOrbitChoices();
   renderActivity();
   if (onlyChanged && unchanged) { renderNewestOutput(); renderOutputRunStatus(); renderRemixes(); return; }
   if (!project()) projectId = state.projects.find((p) => p.id === state.seed)?.id || state.projects[0]?.id;
@@ -705,6 +761,7 @@ function setSourcePlayback(source) {
   }, { once: true });
 }
 function render() {
+  renderOrbitChoices();
   const p = project();
   if (!p) { renderEmptyWorkspace(); return; }
   $("video-title").textContent = p.title;
@@ -851,13 +908,13 @@ function finishedClips() {
   return runs.flatMap((run) => [...(run.composites || [])].reverse().map((clip) => ({
     ...clip, run_id: clip.run_id ?? run.id, freeze_time: clip.source_window?.freeze_time ?? run.freeze_time,
     orbit_url: run.url, raw_orbit_url: run.raw_url, test_number: numbers.get(run.id), motion_review: run.motion_review,
-    native_generation_media: run.native_media,
+    native_generation_media: run.native_media, orbit_path: run.orbit_path, orbit_path_label: runOrbitLabel(run),
     action_title: actionTitle(run.action_label, run.freeze_time, project()?.media?.fps)
       || actionTitle(project()?.candidates?.find((item) => item.id === run.item_id)?.action_label, run.freeze_time, project()?.media?.fps),
   })));
 }
 function outputLabel(clip) {
-  return `Clip ${clip.test_number}${clip.action_title ? ` · ${clip.action_title}` : ""} · source ${clock(clip.freeze_time)} · ${Math.round(clip.media.duration)}s${clip.transition === "cut" ? " · direct cut" : ""}`;
+  return `Clip ${clip.test_number}${clip.orbit_path_label ? ` · ${clip.orbit_path_label}` : ""}${clip.action_title ? ` · ${clip.action_title}` : ""} · source ${clock(clip.freeze_time)} · ${Math.round(clip.media.duration)}s${clip.transition === "cut" ? " · direct cut" : ""}`;
 }
 function outputResolution(clip, source = project()) {
   const provenance = clip.resolution_provenance || {};
@@ -952,7 +1009,7 @@ function renderOutputRunStatus() {
       const detail = node("div", undefined, "run-status-detail");
       const title = node("h4", local ? progress.title : `${progress.title} in another video`);
       title.setAttribute("aria-live", "polite");
-      detail.append(title, node("p", progress.message), node("p", `Source frame ${clock(run.freeze_time)}${progress.elapsed ? ` · ${progress.elapsed}` : ""}`, "output-summary"));
+      detail.append(title, node("p", progress.message), node("p", `Source frame ${clock(run.freeze_time)}${runOrbitLabel(run) ? ` · ${runOrbitLabel(run)}` : ""}${progress.elapsed ? ` · ${progress.elapsed}` : ""}`, "output-summary"));
       if (!local) {
         const button = node("button", `Open ${source.title || source.id}`, "secondary run-project-button");
         button.type = "button";
@@ -988,7 +1045,7 @@ function renderOutputViewer(clips = finishedClips()) {
     video.pause(); video.src = clip.url; video.dataset.output = clip.id;
   }
   video.setAttribute("aria-label", outputLabel(clip));
-  $("output-title").textContent = `Clip ${clip.test_number} · ${clip.action_title || `${Math.round(clip.media.duration)}s highlight`}${clip.transition === "cut" ? " · direct cut" : ""}`;
+  $("output-title").textContent = `Clip ${clip.test_number}${clip.orbit_path_label ? ` · ${clip.orbit_path_label}` : ""} · ${clip.action_title || `${Math.round(clip.media.duration)}s highlight`}${clip.transition === "cut" ? " · direct cut" : ""}`;
   const segments = clip.segments || [];
   const duration = (kind, fallback) => {
     const segment = segments.find((item) => item.kind === kind);
@@ -1657,14 +1714,16 @@ async function submitGeneration({ referenceRunId = null, freezeTime } = {}) {
   if (pendingGenerations.has(projectId)) { resumeGenerations(); return; }
   const sourceId = projectId, source = project();
   const selected = active() || (source.candidates || []).find((candidate) => candidate.selected);
+  const orbitPath = chosenOrbitPath()?.id;
   const record = { video_id: sourceId, started_at: Date.now(), freeze_time: freezeTime ?? selected?.freeze_time,
-    known_run_ids: (source.generations || []).map((run) => run.id) };
+    known_run_ids: (source.generations || []).map((run) => run.id), ...(orbitPath ? { orbit_path: orbitPath } : {}) };
   pendingGenerations.set(sourceId, record); savePendingGenerations();
   scheduleWorkspaceRefresh();
   $("generate").disabled = true; $("rerun-output").disabled = true;
   try {
     try {
       const started = await api("/api/generate", { video_id: sourceId, mode: "fal-h3-max",
+        ...(orbitPath ? { orbit_path: orbitPath } : {}),
         ...(referenceRunId ? { reference_run_id: referenceRunId } : selected?.id ? { item_id: selected.id } : {}) });
       Object.assign(record, { job_id: started.job_id, run_id: started.run_id }); savePendingGenerations();
       try { await refresh(); } catch { /* The saved tracker recovers if the server is restarting. */ }

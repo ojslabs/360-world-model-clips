@@ -23,6 +23,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from PIL import Image
 
 import media
+import orbit_paths
 from runtime_paths import data_dir
 
 ROOT = Path(__file__).resolve().parent
@@ -440,7 +441,7 @@ def recover_local(output_dir, *, on_progress=None):
 
 
 def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on_progress=None,
-             credential_key=ENV_CREDENTIAL):
+             credential_key=ENV_CREDENTIAL, request_parameters=None, orbit_path=None):
     """Submit once per output directory; later calls resume the recorded request.
 
     A timeout never cancels or resubmits a paid request. A submit without an
@@ -464,7 +465,13 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
         raise FalError("Save a valid 16:9 PNG freeze frame before using Fal camera controls.") from None
     key = api_key(credential_key)
     credential_owner = hashlib.sha256(("fal-browser-v1\0" + key).encode()).hexdigest()
-    request = media.orbit_request("data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii"))
+    image_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
+    if request_parameters is None:
+        request = media.orbit_request(image_url, orbit_path=orbit_path or orbit_paths.DEFAULT)
+    else:
+        request = {**orbit_paths.parameters(request_parameters), "image_url": image_url}
+        if request["duration"] != seconds:
+            raise FalError("The saved motion request duration does not match this run.")
     request.update(prompt=prompt, duration=seconds)
     fingerprint = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
     target = Path(output_dir).resolve()
@@ -483,7 +490,7 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
                 # Acknowledged runs retain their own camera settings and resolution.
                 # Reconstruct the hash with the supplied frame, prompt and duration
                 # so a preset upgrade cannot block read-only historical recovery.
-                if isinstance(receipt.get("parameters"), dict):
+                if request_parameters is None and orbit_path is None and isinstance(receipt.get("parameters"), dict):
                     saved_request = dict(receipt["parameters"])
                     saved_request.update(image_url=request["image_url"], prompt=prompt, duration=seconds)
                     fingerprint = hashlib.sha256(json.dumps(saved_request, sort_keys=True).encode()).hexdigest()
@@ -500,6 +507,7 @@ def generate(frame_path, output_dir, prompt, seconds=6, *, resume_only=False, on
                        "stage_started_at": time.time(), "stage_timings": {},
                        "preset_id": media.ORBIT_PRESET["id"], "prompt": prompt,
                        "input_sha256": fingerprint,
+                       "orbit_path": orbit_path or orbit_paths.DEFAULT, "orbit_path_version": orbit_paths.VERSION,
                        "frame_sha256": hashlib.sha256(image_bytes).hexdigest(),
                        "seconds": seconds, "exact_camera_controls": True,
                        "parameters": {k: v for k, v in request.items() if k not in {"image_url", "prompt"}}}

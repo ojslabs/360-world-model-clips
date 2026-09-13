@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180" role="img" aria-labelledby="title description">
+  <title id="title">Three requested camera paths</title>
+  <desc id="description">Schematic loops around a stationary subject: a level circle, a vertical circle, and a tilted circle. These diagrams are not generated video examples.</desc>
+  <rect width="720" height="180" rx="12" fill="#101010"/>
+  <g fill="none" stroke="#343434" stroke-width="1">
+    <path d="M240 24v132M480 24v132"/>
+  </g>
+  <g fill="none" stroke="#ededed" stroke-width="2" stroke-linecap="round">
+    <ellipse cx="120" cy="68" rx="54" ry="21"/>
+    <ellipse cx="360" cy="68" rx="21" ry="48"/>
+    <ellipse cx="600" cy="68" rx="54" ry="21" transform="rotate(-45 600 68)"/>
+  </g>
+  <g fill="#ededed" stroke="#101010" stroke-width="5">
+    <circle cx="120" cy="68" r="7"/>
+    <circle cx="360" cy="68" r="7"/>
+    <circle cx="600" cy="68" r="7"/>
+  </g>
+  <g fill="#ededed" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" font-weight="600" text-anchor="middle">
+    <text x="120" y="140">Around</text>
+    <text x="360" y="140">Over &amp; under</text>
+    <text x="600" y="140">Diagonal</text>
+  </g>
+  <g fill="#a6a6a6" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12" text-anchor="middle">
+    <text x="120" y="160">Level circle</text>
+    <text x="360" y="160">Vertical circle</text>
+    <text x="600" y="160">Tilted circle</text>
+  </g>
+</svg>

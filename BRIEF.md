@@ -15,8 +15,11 @@ caption/audio suggestions; other titles skip that processing.
 The default edit is 8 seconds of original action, 6 seconds of orbit, then
 4 seconds of resumed original video and audio. The result is 16:9 at 1080p or 4K.
 Fal output is requested at 1080P; 4K delivery retains native source and reference
-detail while enlarging generated frames. The exact provider request is owned by
-`orbit_preset.json`.
+detail while enlarging generated frames. `orbit_preset.json` owns the fixed prompt,
+model settings and original Around path. `orbit_paths.py` derives the selectable
+Around, Over & under and Diagonal requests. The vertical and diagonal choices
+still need visual review of generated results. Rerun uses the current choice on
+the same saved frame; recovery uses the original run's stored path and parameters.
 
 Local reference editing makes the first and last orbit frames identical and
 resumes on the next source frame. These checks establish edit boundaries, not

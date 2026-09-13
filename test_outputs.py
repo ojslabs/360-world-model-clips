@@ -271,7 +271,10 @@ class OutputTests(unittest.TestCase):
         self.generate.assert_not_called()
 
     def test_generation_remains_complete_when_automatic_local_assembly_fails(self):
-        def generated(frame, target, prompt, seconds):
+        def generated(frame, target, prompt, seconds, *, request_parameters, orbit_path):
+            self.assertEqual(orbit_path, "around")
+            self.assertEqual(request_parameters["camera_trajectory"],
+                             media.orbit_request("unused")["camera_trajectory"])
             output = target / "fal-camera.mp4"
             output.write_bytes(b"new provider video")
             return {"path": str(output), "media": {"duration": 6}, "request_id": "new-request"}

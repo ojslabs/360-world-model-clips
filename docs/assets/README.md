@@ -1,4 +1,11 @@
-# F1 example
+# Documentation visuals
+
+[orbit-paths.svg](orbit-paths.svg) is an original diagram of the three requested
+camera-path planes. It is a schematic, not a generated result. The F1 previews
+below use the original Around path; there are no generated Over & under or
+Diagonal examples in this documentation yet.
+
+## F1 example
 
 The README previews come from an existing completed edit of Red Bull's
 [Jumping Over A Moving F1 Car (world first)](https://www.youtube.com/watch?v=8o40mSS05iE),

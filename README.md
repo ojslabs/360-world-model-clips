@@ -12,7 +12,7 @@ The preview is reduced to 640 × 360; the app requested Fal's 1080P output.
 [Example details and attribution](docs/assets/README.md).
 
 [Run it locally](#run-it-locally) · [Setup and Docker](docs/setup.md) ·
-[Exact prompt and custom camera path](orbit_preset.json)
+[Exact prompt](orbit_preset.json) · [Camera path definitions](orbit_paths.py)
 
 ## Make your first edit
 
@@ -21,7 +21,8 @@ blank. Search for a YouTube video or paste its link, import it, then scrub to th
 moment you want. The frame controls let you move forwards or backwards before
 clicking **Use this frame**.
 
-Click **Generate** when the frame is right. The finished edit appears in Outputs:
+Choose **Around**, **Over & under** or **Diagonal**, then click **Generate** when
+the frame is right. The finished edit appears in Outputs:
 
 | Original action | Generated orbit | Original action resumes |
 | --- | --- | --- |
@@ -31,9 +32,27 @@ You get an 18-second, 16:9 MP4 with audio. Download clips individually or combin
 finished clips of the same resolution into a reel. Previous edits stay available.
 Search, playback and choosing a frame do not submit a video generation request.
 
+### Choose the camera path
+
+![Requested camera paths: Around is a level circle, Over and under is a vertical circle, and Diagonal is a tilted circle](docs/assets/orbit-paths.svg)
+
+**Around** requests a level loop around the reference. **Over & under**
+requests a vertical loop, passing above and below the reference. **Diagonal**
+requests a loop tilted 45 degrees from Around.
+
+The diagram shows requested paths relative to the saved view. Fal still has to
+generate the result. Over & under is experimental: it has no camera-roll control at its poles, so
+the picture may flip there; Diagonal's keyframes approximate the tilted circle.
+Review those new paths on your own frame. The F1 video above demonstrates Around.
+Choosing a path alone does not start generation. To compare paths, choose another
+one and rerun an existing output's saved frame. The new output records the path
+you selected; the earlier edit stays available.
+
 ## How the H3 Max orbit works
 
-The custom part is the camera path in [orbit_preset.json](orbit_preset.json).
+The fixed prompt and original Around path live in
+[orbit_preset.json](orbit_preset.json). [orbit_paths.py](orbit_paths.py) defines the
+other camera choices from that preset.
 The actual Fal endpoint is
 [`minimax/h3-max/camera-controls`](https://fal.ai/models/minimax/h3-max/camera-controls),
 which Fal names H3 Max Camera Controls / Multi Angle. The app uses that published
@@ -49,12 +68,14 @@ endpoint directly.
    copy of the exact source frame as a PNG and saves the request beside it. The
    moving video is used later for the edit; Fal receives the still image.
 
-3. The server sends that image with the preset's fixed prompt and ten camera
-   keyframes. The prompt asks the scene to stay frozen while the camera moves.
-   The requested path holds its starting angle for 0.2 seconds, eases around one full turn
+3. The server sends that image with the preset's fixed prompt and the selected
+   camera keyframes. The prompt asks the scene to stay frozen while the camera
+   moves. Around uses the original ten keyframes: it holds its starting angle
+   for 0.2 seconds, eases around one full turn
    by 5.3 seconds, and holds the final angle for the remaining 0.7 seconds.
-   Elevation stays at zero and distance stays at one. Every new run uses this
-   same preset; it does not depend on an assistant rewriting the request.
+   Its elevation stays at zero. All three choices keep distance at one and use
+   the same prompt, six-second duration and resolution. No assistant rewrites
+   the request between runs.
 
 4. Fal processes the queued request. The app shows progress, saves the provider's
    response and downloads the original generated video. It retains the complete

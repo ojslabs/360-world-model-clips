@@ -25,6 +25,7 @@ import demo_auth
 from runtime_paths import data_dir
 import download_progress
 import fal_credentials
+import orbit_paths
 
 ROOT = Path(__file__).resolve().parent
 DATA = data_dir(ROOT)
@@ -797,7 +798,9 @@ def export_sources(video_id, combined):
     return result
 
 
-def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, credential=None):
+def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, credential=None, orbit_path=None):
+    if orbit_path is not None:
+        orbit_paths.selection(orbit_path)
     if mode != "fal-h3-max":
         raise ValueError("Choose Fal H3 Max camera controls.")
     connection = generation_status(credential) if credential else generation_status()
@@ -809,6 +812,8 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, cre
         project = load_project(video_id)
         if reference_run_id is not None:
             previous = read_run(video_id, reference_run_id)
+            if orbit_path is None:
+                orbit_path = previous.get("orbit_path", orbit_paths.DEFAULT)
             if previous.get("provider") != "Fal" or previous.get("status") != "complete":
                 raise ValueError("Choose a completed Fal run to reuse its frame.")
             selected_frame = folder(video_id) / "exports" / reference_run_id / "frame.png"
@@ -830,6 +835,8 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, cre
             if "freeze_time" not in item or not item.get("frame_url"):
                 raise ValueError("Set a freeze frame on the selected cut-up first.")
             selected_frame = folder(video_id) / "frames" / f"{item['id']}.png"
+        chosen_path = orbit_paths.selection(orbit_path or orbit_paths.DEFAULT)
+        request = media.orbit_request("SAVED_FRAME", chosen_path["id"])
         media.cut_window(item["freeze_time"], project["media"]["duration"], project["media"]["fps"],
                          item.get("tail_seconds", media.DEFAULTS["tail_seconds"]))
         if not selected_frame.is_file():
@@ -843,7 +850,7 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, cre
         target.mkdir(parents=True)
         frame_path = target / "frame.png"
         shutil.copyfile(selected_frame, frame_path)
-        prompt = media.ORBIT_PRESET["input"]["prompt"]
+        prompt = request["prompt"]
         record = {"id": run_id, "job_id": job_id, "video_id": video_id,
                   "status": "queued", "created_at": time.time(), "kind": "World model clip",
                   "model": connection["model"], "provider": "Fal", "item_id": item["id"],
@@ -851,6 +858,9 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, cre
                   "lead_seconds": media.DEFAULTS["lead_seconds"],
                   "frame_sha256": hashlib.sha256(frame_path.read_bytes()).hexdigest(),
                   "preset_id": media.ORBIT_PRESET["id"],
+                  "orbit_path": chosen_path["id"], "orbit_path_label": chosen_path["label"],
+                  "orbit_path_version": orbit_paths.VERSION,
+                  "request_parameters": {k: v for k, v in request.items() if k not in {"image_url", "prompt"}},
                   "delivery": dict(media.ORBIT_PRESET.get("delivery", {})),
                   "prompt": prompt, "exact_camera_controls": True}
         if credential:
@@ -875,6 +885,11 @@ def execute_generation(video_id, run_id, *, resume_only=False, credential=None):
     target = folder(video_id) / "exports" / run_id
     frame_path = target / "frame.png"
     prompt = snapshot["prompt"]
+
+    def request_options():
+        if snapshot.get("request_parameters") is not None:
+            return {"request_parameters": snapshot["request_parameters"], "orbit_path": snapshot.get("orbit_path", orbit_paths.DEFAULT)}
+        return {}
 
     def credential_options():
         if snapshot.get("credential_source") == "browser":
@@ -927,9 +942,10 @@ def execute_generation(video_id, run_id, *, resume_only=False, credential=None):
                         (target / name).is_file() for name in ("fal-camera-native.mp4", "fal-camera.mp4")):
                     result = fal_camera.recover_local(target)
                 else:
-                    result = fal_camera.generate(frame_path, target, prompt, seconds=receipt["seconds"], resume_only=True, **credential_options())
+                    result = fal_camera.generate(frame_path, target, prompt, seconds=receipt["seconds"], resume_only=True, **credential_options(), **request_options())
             else:
-                result = fal_camera.generate(frame_path, target, prompt, seconds=media.DEFAULTS["orbit_seconds"], **credential_options())
+                result = fal_camera.generate(frame_path, target, prompt, seconds=snapshot.get("request_parameters", {}).get("duration", media.DEFAULTS["orbit_seconds"]),
+                                             **credential_options(), **request_options())
             output = Path(result["path"]).resolve()
             if not output.is_relative_to(target.resolve()) or output.suffix != ".mp4":
                 raise ValueError("The generator did not produce a local MP4 in this run.")
@@ -1370,6 +1386,7 @@ class Handler(BaseHTTPRequestHandler):
                     projects = [public_project(p.parent.name) for p in sorted((DATA / "sources").glob("*/project.json"))]
                     jobs = compact_jobs()
                 self.send_json({"projects": projects, "jobs": jobs, "defaults": media.DEFAULTS,
+                                "orbit_paths": orbit_paths.catalog(),
                                 "generation": generation_status(fal_credentials.get(self.headers.get("Cookie"))), "seed": SEED,
                                 "fal_credentials": fal_credentials.status(self.headers.get("Cookie")),
                                 "workspace_reset": media.read_json(DATA / "workspace-reset.json", {}).get("id"),
@@ -1471,7 +1488,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = generation_status(fal_credentials.get(self.headers.get("Cookie")))
             elif path == "/api/generate":
                 result = start_generation(data["video_id"], data.get("mode"), data.get("reference_run_id"),
-                                          item_id=data.get("item_id"), credential=fal_credentials.require(self.headers.get("Cookie")))
+                                          item_id=data.get("item_id"), credential=fal_credentials.require(self.headers.get("Cookie")),
+                                          **({"orbit_path": data["orbit_path"]} if "orbit_path" in data else {}))
             elif path == "/api/assemble":
                 result = start_assembly(data["video_id"], data["run_id"],
                                         data.get("tail_seconds", media.DEFAULTS["tail_seconds"]))
