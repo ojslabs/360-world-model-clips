@@ -50,7 +50,7 @@ wmc_main() {
     case "$arg" in
       --help|-h)
         printf '%s\n' 'Usage: install.sh [--ref main|40-character-commit] [--install-dir PATH] [--port PORT] [--name NAME] [--no-open]' \
-          'Requires Bash, curl, tar and a running Docker engine. Python, Node.js and FFmpeg are installed inside the image.'
+          'Requires Bash, curl, tar, gzip and a running Docker engine. Python, Node.js and FFmpeg are installed inside the image.'
         return ;;
       --no-open) open_browser=0 ;;
       --ref|--install-dir|--port|--name)

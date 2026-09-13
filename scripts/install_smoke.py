@@ -62,7 +62,7 @@ def main():
         with socket.socket() as available:
             available.bind(("127.0.0.1", 0))
             port = available.getsockname()[1]
-        url = f"https://raw.githubusercontent.com/ojslabs/360-world-model-clips/{args.ref}/scripts/install.sh"
+        url = f"https://github.com/ojslabs/360-world-model-clips/raw/{args.ref}/scripts/install.sh"
         with urlopen(url, timeout=30) as response:
             script = response.read(2 * 1024 * 1024)
         assert script == (repo / "scripts/install.sh").read_bytes(), "Published installer differs from tested source."

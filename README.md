@@ -19,7 +19,8 @@ or **[Docker Engine on Linux](https://docs.docker.com/engine/install/)** first.
 With Docker running, paste this into Bash:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ojslabs/360-world-model-clips/main/scripts/install.sh | bash
+curl -fsSL \
+  https://github.com/ojslabs/360-world-model-clips/raw/main/scripts/install.sh | bash
 ```
 
 The installer downloads the app and builds its Python 3.12, Node.js, FFmpeg and

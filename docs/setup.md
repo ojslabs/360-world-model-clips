@@ -11,7 +11,8 @@ Bash terminal, `curl`, `tar`, `gzip`, an internet connection and permission to u
 running Docker engine. The app installer does not install Docker itself.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ojslabs/360-world-model-clips/main/scripts/install.sh | bash
+curl -fsSL \
+  https://github.com/ojslabs/360-world-model-clips/raw/main/scripts/install.sh | bash
 ```
 
 [Read scripts/install.sh](../scripts/install.sh) before running it if you want to
