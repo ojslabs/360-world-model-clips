@@ -139,7 +139,7 @@ for up to eight hours. It is not saved to disk or preloaded into the page.
 Disconnect to remove it; reconnect after a server restart. Fal usage is charged
 to your account.
 
-Use **View Fal usage** in the account panel to open your
+Use **View usage & billing** in the account panel to open your
 [Fal usage dashboard](https://fal.ai/dashboard/usage-billing).
 
 Bootstrap installs the pinned Python dependencies, checks the media tools,

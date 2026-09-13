@@ -34,7 +34,7 @@ server restart clears all such connections. The app does not put the key into
 local storage, runtime files or output receipts. Browser requests never fall
 back to a server owner's `FAL_KEY`.
 
-**View Fal usage** opens your [Fal usage dashboard](https://fal.ai/dashboard/usage-billing).
+**View usage & billing** opens your [Fal usage dashboard](https://fal.ai/dashboard/usage-billing).
 
 Disconnecting prevents new requests through that connection. Work already
 submitted continues with the credential captured when it started. If a restart
