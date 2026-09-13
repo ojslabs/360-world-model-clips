@@ -24,8 +24,11 @@ def check_tools(require_model=False):
         except importlib.metadata.PackageNotFoundError:
             errors.append(f"Missing Python dependency: {package}")
     for tool in ("ffmpeg", "ffprobe", "node"):
-        command = os.environ.get("FOOTBALL_FFMPEG") if tool == "ffmpeg" else None
-        command = command or shutil.which(tool)
+        try:
+            command = shutil.which(media._media_command([tool])[0])
+        except RuntimeError as error:
+            errors.append(str(error))
+            continue
         if not command or not Path(command).is_file():
             errors.append(f"Missing {tool}; install it and put it on PATH.")
             continue

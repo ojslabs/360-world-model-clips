@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 from functools import lru_cache
+from fractions import Fraction
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -16,7 +17,7 @@ import numpy as np
 from scipy.signal import find_peaks
 
 ORBIT_PRESET = json.loads((Path(__file__).resolve().parent / "orbit_preset.json").read_text())
-DEFAULTS = {"lead_seconds": 8, "orbit_seconds": ORBIT_PRESET["input"]["duration"], "tail_seconds": 4,
+DEFAULTS = {"lead_seconds": 4, "orbit_seconds": ORBIT_PRESET["input"]["duration"], "tail_seconds": 10,
             "aspect_ratio": "16:9", "resolution": ORBIT_PRESET["input"]["resolution"]}
 SOURCE_FORMAT = "bv*+ba/b"
 SOURCE_SORT = "res,fps"
@@ -55,6 +56,11 @@ def _ffmpeg_has_fps_mode(path, size, modified_ns, inode):
 def _media_command(args):
     command = [str(value) for value in args]
     configured = os.environ.get("FOOTBALL_FFMPEG")
+    if command and command[0] == "ffprobe" and configured:
+        # Probe with the matching distribution, including its video decoders.
+        companion = Path(configured).with_name("ffprobe")
+        if companion.is_absolute() and companion.is_file() and os.access(companion, os.X_OK):
+            return [str(companion.resolve()), *command[1:]]
     if not command or command[0] != "ffmpeg" or not configured:
         return command
     binary = Path(configured)
@@ -75,8 +81,6 @@ def _media_command(args):
 
 def run(args, timeout=300, *, strict_errors=False):
     result = subprocess.run(_media_command(args), capture_output=True, timeout=timeout)
-    # Use only with error-level logging. A successful exit must not hide
-    # a reported decoder error.
     if result.returncode or (strict_errors and result.stderr.strip()):
         detail = result.stderr.decode(errors="replace")[-1800:]
         detail = re.sub(r"https?://\S+", "[remote URL]", detail)
@@ -104,21 +108,38 @@ def youtube_id(value):
     return result
 
 
+def video_duration(raw, video):
+    """Use the picture clock rather than a longer or shorter accompanying audio track."""
+    value = video.get("duration")
+    if value is None and video.get("tags", {}).get("DURATION"):
+        parts = video["tags"]["DURATION"].split(":")
+        if len(parts) == 3:
+            value = (float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+                     - float(video.get("start_time", 0)))
+    if value is None and video.get("nb_frames") and video.get("avg_frame_rate"):
+        value = int(video["nb_frames"]) / float(Fraction(video["avg_frame_rate"]))
+    duration = float(value if value is not None else raw["format"]["duration"])
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("The source video duration must be finite and positive.")
+    return duration
+
+
 def probe(path):
     raw = json.loads(run(["ffprobe", "-v", "error", "-show_streams", "-show_format",
                           "-of", "json", path]))
     video = next((s for s in raw["streams"] if s["codec_type"] == "video"), None)
     audio = next((s for s in raw["streams"] if s["codec_type"] == "audio"), None)
-    if not video or not audio:
-        raise ValueError("The source needs both a video track and an audio track.")
+    if not video:
+        raise ValueError("The source needs a video track.")
     numerator, denominator = map(int, video["avg_frame_rate"].split("/"))
     fps = numerator / denominator if denominator else 0
-    duration = float(raw["format"]["duration"])
-    if not 1 <= fps <= 240 or not math.isfinite(duration) or duration < 5:
+    duration = video_duration(raw, video)
+    if not 1 <= fps <= 240:
         raise ValueError("Unsupported source duration or frame rate.")
     return {"duration": duration, "width": video["width"], "height": video["height"],
             "fps": fps, "video_codec": video["codec_name"],
-            "audio_codec": audio["codec_name"], "pixel_format": video.get("pix_fmt"),
+            "audio_codec": audio["codec_name"] if audio else None, "audio_present": bool(audio),
+            "pixel_format": video.get("pix_fmt"),
             "color_transfer": video.get("color_transfer"),
             "bytes": path.stat().st_size}
 
@@ -126,7 +147,7 @@ def probe(path):
 def verify_source_decode(path, details):
     for time in (0, max(0, details["duration"] - 2)):
         run(["ffmpeg", "-v", "error", "-xerror", "-ss", str(time), "-i", path,
-             "-t", "1", "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], timeout=120)
+             "-t", "1", "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"], timeout=120)
 
 
 def validate_source_selection(info, details):
@@ -162,7 +183,7 @@ def browser_preview(source, directory, details, *, av1_mp4=False):
     """Keep full source dimensions and FPS, changing only incompatible encoding."""
     video_copy = details["video_codec"] == "h264" and details.get("pixel_format") in {None, "yuv420p"}
     video_copy |= av1_mp4 is True and details["video_codec"] == "av1"
-    audio_copy = details["audio_codec"] in {"aac", "mp3"}
+    audio_copy = details["audio_codec"] in {None, "aac", "mp3"}
     output_video_codec = details["video_codec"] if video_copy else "h264"
     if source.suffix == ".mp4" and video_copy and audio_copy:
         return {"path": str(source), "kind": "original", "media": details,
@@ -183,7 +204,7 @@ def browser_preview(source, directory, details, *, av1_mp4=False):
     else:
         temporary = directory / f"{stem}-pending.mp4"
         command = ["ffmpeg", "-y", "-v", "error", "-xerror", "-i", source,
-                   "-map", "0:v:0", "-map", "0:a:0", "-sn", "-dn"]
+                   "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"]
         if video_copy:
             command += ["-c:v", "copy"]
         else:
@@ -310,17 +331,46 @@ def candidates(events, duration, limit=40):
     return result
 
 
-def cut_window(time, duration, fps, tail=None):
+def frame_selection_bounds(duration, fps):
+    if isinstance(duration, bool) or not math.isfinite(duration) or duration <= 0 or isinstance(fps, bool):
+        raise ValueError("Choose a source with a valid video duration and frame rate.")
+    try:
+        clock = Fraction(str(fps)).limit_denominator(1000000)
+    except (ValueError, ZeroDivisionError):
+        raise ValueError("Choose a source with a valid video frame rate.") from None
+    if not 1 <= clock <= 240:
+        raise ValueError("Choose a source with a supported video frame rate.")
+    first = math.ceil(DEFAULTS["lead_seconds"] * clock)
+    last = math.ceil(Fraction(str(duration)) * clock - Fraction(1, 100000)) - 1
+    if last < first:
+        raise ValueError(f"This video needs a frame with the full {DEFAULTS['lead_seconds']} seconds before it.")
+    return {"min_time": float(first / clock), "max_time": float(last / clock),
+            "min_frame": first, "max_frame": last, "source_fps": str(clock)}
+
+
+def cut_window(time, duration, fps, tail=None, *, resume_next_frame=True):
     tail = DEFAULTS["tail_seconds"] if tail is None else tail
-    if not math.isfinite(time) or not math.isfinite(tail) or tail != DEFAULTS["tail_seconds"]:
-        raise ValueError(f"Choose a valid frame and {DEFAULTS['tail_seconds']} seconds of resumed action.")
-    time = round(time * fps) / fps
-    start, end = time - DEFAULTS["lead_seconds"], time + tail
-    if start < 0 or end > duration:
-        raise ValueError("This frame needs more source context for the lead-in and resumed action.")
-    return {"freeze_time": time, "start": start, "end": end, "tail_seconds": tail,
+    if (isinstance(time, bool) or not math.isfinite(time) or isinstance(tail, bool)
+            or not math.isfinite(tail) or tail != DEFAULTS["tail_seconds"]):
+        raise ValueError(f"Choose a valid frame and up to {DEFAULTS['tail_seconds']} seconds of resumed action.")
+    if not isinstance(resume_next_frame, bool):
+        raise ValueError("Next-frame resumption must be explicitly true or false.")
+    bounds = frame_selection_bounds(duration, fps)
+    clock = Fraction(bounds["source_fps"])
+    frame = round(Fraction(str(time)) * clock)
+    if not bounds["min_frame"] <= frame <= bounds["max_frame"]:
+        raise ValueError(f"Choose an existing frame with the full {DEFAULTS['lead_seconds']} seconds before it.")
+    freeze = float(frame / clock)
+    resume_frame = frame + int(resume_next_frame)
+    resume = float(resume_frame / clock)
+    actual_tail = max(0., min(tail, duration - resume)) if resume_frame <= bounds["max_frame"] else 0.
+    start, end = freeze - DEFAULTS["lead_seconds"], min(duration, resume + actual_tail)
+    return {"freeze_time": freeze, "freeze_frame": frame, "start": start, "end": end,
+            "resume_time": resume, "resume_frame": resume_frame, "resume_next_frame": resume_next_frame,
+            "source_fps": str(clock), "tail_seconds": tail, "requested_tail_seconds": tail,
+            "actual_tail_seconds": actual_tail,
             "source_seconds": end - start,
-            "final_seconds": end - start + DEFAULTS["orbit_seconds"]}
+            "final_seconds": DEFAULTS["lead_seconds"] + DEFAULTS["orbit_seconds"] + actual_tail}
 
 
 def extract_frame(source, time, target):

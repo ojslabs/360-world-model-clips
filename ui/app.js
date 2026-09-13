@@ -829,15 +829,17 @@ function renderSelection() {
   const p = project(); if (!p) return;
   const selected = (p.candidates || []).filter((c) => c.selected);
   $("selected-count").textContent = selected.length;
-  const seconds = selected.length * (state.defaults.lead_seconds + state.defaults.orbit_seconds + state.defaults.tail_seconds);
-  $("selection-duration").textContent = selected.length ? `${seconds}s planned finished footage` : "";
+  const exact = selected.every((item) => Number.isFinite(item.edit_window?.final_seconds));
+  const seconds = selected.reduce((total, item) => total + (item.edit_window?.final_seconds
+    ?? state.defaults.lead_seconds + state.defaults.orbit_seconds + state.defaults.tail_seconds), 0);
+  $("selection-duration").textContent = selected.length ? `${exact ? "" : "Up to "}${formatSeconds(seconds)}s planned finished footage` : "";
   $("export").disabled = !selected.length;
   const runs = p.generations || [];
   const running = runs.some((r) => ["queued", "running"].includes(r.status));
   const frame = active();
   $("generate").disabled = p.generation_available === false || p.status === "preparing_preview" || !state.generation.ready || running || pendingGenerations.has(projectId) || !frame?.frame_url;
   $("generation-frame").textContent = frame?.frame_url ? `Saved frame · ${clock(frame.freeze_time)}` : "Pause the video and use a frame above.";
-  $("selection-audio").textContent = p.audio_mode === "source_slow_motion" ? "Source audio with a slow-motion effect." : "";
+  $("selection-audio").textContent = p.audio_mode === "source_slow_motion" ? "Automatic audio warp: music and sound slow down, loop through the generated section, then return to normal speed." : "";
   $("selection-audio").hidden = !$("selection-audio").textContent;
   updateTiming();
   const generations = $("generations"); generations.replaceChildren();
@@ -1051,10 +1053,10 @@ function renderOutputViewer(clips = finishedClips()) {
     const segment = segments.find((item) => item.kind === kind);
     return segment ? segment.output_end - segment.output_start : fallback;
   };
-  const lead = duration("source_lead", state.defaults.lead_seconds);
+  const lead = duration("source_lead", clip.lead_seconds ?? state.defaults.lead_seconds);
   const orbit = duration("camera_orbit", clip.provider_orbit_seconds ?? state.defaults.orbit_seconds);
-  const tail = duration("source_tail", clip.tail_seconds);
-  $("output-summary").textContent = `Source freeze ${clock(clip.freeze_time)} · ${lead}s original action + ${orbit}s generated moment + ${tail}s continued play`;
+  const tail = duration("source_tail", clip.actual_tail_seconds ?? clip.source_window?.actual_tail_seconds ?? clip.tail_seconds);
+  $("output-summary").textContent = `Source freeze ${clock(clip.freeze_time)} · ${formatSeconds(lead)}s original action + ${formatSeconds(orbit)}s generated moment + ${formatSeconds(tail)}s continued play`;
   $("output-resolution").textContent = outputResolution(clip);
   $("output-resolution").hidden = !$("output-resolution").textContent;
   $("output-return").textContent = clip.reference_closure?.first_last_pixel_hash_equal
@@ -1083,8 +1085,12 @@ function renderOutputViewer(clips = finishedClips()) {
   else $("output-source").removeAttribute("href");
   $("output-source").textContent = sourceView.compatiblePreview ? "View source preview ↗" : "View original source ↗";
   const audio = clip.audio_provenance?.orbit;
+  const sourceSound = clip.audio_provenance?.source_audio ?? clip.audio_provenance?.crowd_bed;
+  const silentSound = Boolean(sourceSound?.silence_reason)
+    || ["silent", "no_audio_stream", "audio_ended"].includes(sourceSound?.source_window_state);
   $("output-audio").textContent = audio === "source_slow_motion_loop"
-    ? "Source audio with a slow-motion effect during the generated section. Original audio resumes afterwards."
+    ? silentSound ? "The source is silent at this moment, so the generated section stays silent."
+      : "Source audio with a slow-motion effect: music and sound slow down, loop through the generated section, then return to normal speed."
     : audio === "silence_no_crowd_recording"
     ? "Original audio before and after the generated section. The generated section is silent; crowd separation is pending."
     : audio === "source_crowd_centre_suppressed"
@@ -1503,19 +1509,24 @@ function renderActive() {
   renderActionLabelStatus();
   $("cue-text").textContent = item.cue;
   $("cue-kind").textContent = [...new Set((item.signals || []).map((s) => s.kind === "audio" ? "Audio energy peak" : "Caption cue"))].join(" · ");
-  const slider = $("scrub"); slider.min = state.defaults.lead_seconds;
-  slider.max = p.media.duration - state.defaults.tail_seconds; slider.step = 1 / p.media.fps;
+  const slider = $("scrub"); slider.min = p.frame_selection?.min_time ?? state.defaults.lead_seconds;
+  slider.max = p.frame_selection?.max_time ?? Math.max(Number(slider.min), p.media.duration - 1 / p.media.fps);
+  slider.step = 1 / p.media.fps;
   slider.disabled = false;
   for (const id of ["step-back", "step-forward", "play-cut", "set-frame"]) $(id).disabled = false;
   $("tail").replaceChildren();
-  const tailOption = node("option", `${state.defaults.tail_seconds} seconds`); tailOption.value = state.defaults.tail_seconds;
+  const tailOption = node("option", `Up to ${state.defaults.tail_seconds} seconds`); tailOption.value = state.defaults.tail_seconds;
   $("tail").append(tailOption); $("tail").value = state.defaults.tail_seconds;
   updateTiming();
   $("frame-detail").textContent = item.frame_url ? `Saved at ${clock(item.freeze_time)}. Use this frame again to save a different moment.` : "Pause on the frame you want, then choose Use this frame.";
 }
+function formatSeconds(value) { return Number(Number(value).toFixed(2)); }
 function updateTiming() {
-  const d = state.defaults, tail = d.tail_seconds;
-  $("timing-summary").textContent = `${d.lead_seconds}s action + ${d.orbit_seconds}s generated moment + ${tail}s resumed action = ${d.lead_seconds + d.orbit_seconds + tail}s`;
+  const d = state.defaults, window = active()?.edit_window;
+  const exact = Number.isFinite(window?.actual_tail_seconds);
+  const tail = exact ? window.actual_tail_seconds : d.tail_seconds;
+  const qualifier = exact ? "" : "up to ";
+  $("timing-summary").textContent = `${d.lead_seconds}s action + ${d.orbit_seconds}s generated moment + ${qualifier}${formatSeconds(tail)}s resumed action = ${qualifier}${formatSeconds(d.lead_seconds + d.orbit_seconds + tail)}s`;
 }
 function updatePosition() {
   $("timecode").textContent = clock(player.currentTime);

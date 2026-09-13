@@ -6,7 +6,7 @@ original action before and after your selection.
 
 ![A generated camera orbit around a bicycle rider above an F1 car](docs/assets/f1-orbit.gif)
 
-Six seconds from an actual saved edit. Source: Red Bull's
+Six seconds from a previously saved 18-second edit. Source: Red Bull's
 [Jumping Over A Moving F1 Car (world first)](https://www.youtube.com/watch?v=8o40mSS05iE&t=586).
 The preview is reduced to 640 × 360; the app requested Fal's 1080P output.
 [Example details and attribution](docs/assets/README.md).
@@ -26,10 +26,14 @@ the frame is right. The finished edit appears in Outputs:
 
 | Original action | Generated orbit | Original action resumes |
 | --- | --- | --- |
-| 8 seconds before your frame | 6 seconds around the frozen reference | 4 seconds after your frame |
+| 4 seconds before your frame | 6 seconds around the frozen reference | Up to 10 seconds after your frame |
 
-You get an 18-second, 16:9 MP4 with audio. Download clips individually or combine
-finished clips of the same resolution into a reel. Previous edits stay available.
+You get a 16:9 MP4 lasting up to 20 seconds. The continuation uses as much footage
+as remains, up to ten seconds, and can be empty at the final source frame. During
+the orbit, the source's own sound and music slow from 1x to 0.75x, then return to
+normal. Speech and background noise stay in the mix; silent videos stay silent.
+Download clips individually or combine finished clips of the same resolution
+into a reel. Previous edits keep their original timing and audio.
 Search, playback and choosing a frame do not submit a video generation request.
 
 ### Choose the camera path
@@ -87,15 +91,16 @@ endpoint directly.
    a direct cut and no added fade or hold. The app checks that those two decoded
    frames still match in the finished MP4.
 
-6. FFmpeg joins the source lead-in, orbit and source continuation. Both picture
-   and original audio resume on the next source frame. In the F1 example, the
-   engine sound underneath the orbit comes from the 1.75 seconds just before the
-   selected moment. Its speed and pitch ease down to 0.75×, then return to normal
-   as the original action resumes.
+6. FFmpeg joins four seconds of source, the orbit and up to ten seconds of source
+   continuation. Every new edit loops the 1.75 seconds of audio just before the
+   selected frame under the orbit. Speed and pitch ease from 1x to 0.75x, then
+   back to 1x. Original picture and audio resume together on the next source
+   frame. This local audio step makes no additional provider request.
 
 ![Four views from the same F1 orbit: reference, first quarter, halfway and third quarter](docs/assets/f1-sequence.jpg)
 
-These views come from one output at 0, 1.5, 3 and 4.5 seconds into its orbit.
+These views come from the earlier 18-second F1 edit at 0, 1.5, 3 and 4.5 seconds
+into its orbit. The existing preview assets retain that edit's timing.
 
 ### What to expect from the result
 
@@ -112,9 +117,9 @@ shift the background or return with different framing. A matching first and last
 frame does not prove that the generated subject stayed frozen or that the
 intervening camera move is physically accurate.
 
-For other videos, orbit audio uses checked source atmosphere. A source-specific
-override can use the same slow-motion audio treatment as the F1 demo. The
-[audio setup](docs/setup.md#orbit-audio) explains both paths.
+The slow audio treatment applies automatically to every new video. It retains
+the complete source mix, including music and speech, and needs no crowd
+separation or per-video setting. See [orbit audio](docs/setup.md#orbit-audio).
 
 ## Run it locally
 

@@ -55,6 +55,12 @@ another option if your distribution's packages lack the required codecs.
 2. Scrub the full video and click **Use this frame** on the desired moment.
 3. Choose **Around**, **Over & under** or **Diagonal**, generate the orbit, then review and download the completed edit.
 
+New edits use four seconds before the selected frame, six seconds of orbit and
+up to ten seconds of source continuation. Choose a frame with the full four-second
+lead available. The continuation starts on the next source frame and shortens at
+the end of the video, including a zero-length tail at its final frame. An edit is
+at most 20 seconds long; earlier outputs retain their saved timing.
+
 Around is the original horizontal path. The experimental Over & under choice requests a vertical loop
 relative to the source camera; Diagonal uses a 45-degree inclined loop. These
 choices share the same fixed prompt, six-second request, `1080P` output and
@@ -116,20 +122,22 @@ verification and preview stages. Estimates remain unknown when yt-dlp omits them
 
 ## Orbit audio
 
-Default orbit audio uses checked stereo source atmosphere. If a source cannot
-provide suitable atmosphere, assembly asks for a configured recording; no borrowed
-fallback recording is shipped. A source can explicitly use its own pre-freeze
-audio by adding an entry to the data directory's `audio-overrides.json`:
+Every new edit uses the source's own audio automatically. The app loops the
+1.75 seconds immediately before the freeze into a 6.5-second bed, with smooth
+joins. Playback speed and pitch ease from 1x to 0.75x over 0.75 seconds, then
+return to 1x over the final 0.75 seconds. The bed overlaps the orbit boundaries
+for the audio fades; it does not extend the six-second orbit.
 
-```json
-{"YOUR_VIDEO_ID": "source_slow_motion"}
-```
+Music, speech and background noise all receive this effect. Original source audio
+stays synchronized before and after the orbit. Silent inputs remain silent, and
+generated model audio is discarded. The effect uses local audio processing with
+no crowd separation, full-video analysis or additional network call. No override
+file is needed.
 
-This loops 1.75 seconds immediately before the freeze, easing speed and pitch
-from 1x to 0.75x and back over a 6.5-second bed. It does not remove speech.
-Original source audio remains synchronized before and after the orbit.
-The included F1 example (`8o40mSS05iE`) already uses this override through
-`config/audio-overrides.json`; your data-directory settings take precedence.
+The F1 documentation previews came from an earlier 18-second edit that enabled
+this treatment through a source-specific override. Those media files and their
+attribution remain unchanged. New output receipts identify the current audio
+method separately from earlier crowd and source-specific edits.
 
 ## Docker
 
@@ -167,7 +175,7 @@ Run those checks in your deployment environment as well before publishing a host
 | `REACTOR_API_KEY` | Optional server-side Reactor key for X2 remixes |
 | `FOOTBALL_DATA_DIR` | Persistent sources, jobs and exports; defaults to `.runtime` |
 | `FOOTBALL_YTDLP` | Optional yt-dlp executable path |
-| `FOOTBALL_FFMPEG` | Optional absolute FFmpeg path; FFprobe remains on PATH |
+| `FOOTBALL_FFMPEG` | Optional absolute FFmpeg path; uses its sibling FFprobe when present, otherwise PATH |
 | `FOOTBALL_VAD_MODEL` | Optional path to the pinned Silero ONNX model |
 | `HOST`, `PORT` | Listen address and port |
 | `DEMO_PASSWORD` | Password for a shared deployment |

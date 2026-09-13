@@ -73,7 +73,7 @@ class ImportModeTests(unittest.TestCase):
         self.assertEqual(again["candidates"], first["candidates"])
 
     def test_short_manual_video_remains_viewable_without_an_invalid_freeze_candidate(self):
-        self.project(duration=media.DEFAULTS["lead_seconds"] + media.DEFAULTS["tail_seconds"])
+        self.project(duration=media.DEFAULTS["lead_seconds"])
         result = server.manual_project(self.video_id)
         self.assertEqual(result["video_url"], "/full-source.mp4")
         self.assertFalse(result["analysis"]["generation_available"])
@@ -90,6 +90,17 @@ class ImportModeTests(unittest.TestCase):
         self.assertEqual(result["analysis"]["mode"], "football")
         self.assertIn("fetching_captions", [event["stage"] for event in events])
         self.assertIn("analyzing", [event["stage"] for event in events])
+
+    def test_silent_football_import_skips_absent_audio_analysis(self):
+        project = self.project("American football replay")
+        project["media"].update(audio_present=False, audio_codec=None)
+        media.write_json(server.manifest(self.video_id), project)
+        with patch.object(server, "verify_source"), patch.object(media, "run"), \
+             patch.object(media, "audio_activity", side_effect=AssertionError("No absent audio track to analyze")):
+            result = server.import_video(self.video_id)
+        self.assertEqual(result["analysis"]["mode"], "football")
+        self.assertEqual(result["waveform"], [])
+        self.assertFalse(result["media"]["audio_present"])
 
 
 if __name__ == "__main__":

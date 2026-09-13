@@ -44,36 +44,28 @@ def _duration(stream, raw):
 
 
 def _source_window(source, freeze_time, tail_seconds, resume_next_frame=False):
-    if isinstance(tail_seconds, bool) or tail_seconds not in TAIL_OPTIONS:
-        raise ValueError(f"Choose {media.DEFAULTS['tail_seconds']} seconds of resumed source action.")
-    if isinstance(freeze_time, bool) or not math.isfinite(freeze_time):
-        raise ValueError("Choose a finite source frame time.")
     raw, video, audio = _probe(source)
-    if not video or not audio:
-        raise ValueError("The source needs both video and original audio.")
+    if not video:
+        raise ValueError("The source needs a video track.")
     try:
         fps = Fraction(video["avg_frame_rate"])
-        sample_rate = int(audio["sample_rate"])
+        sample_rate = int(audio["sample_rate"]) if audio else OUTPUT_SAMPLE_RATE
     except (KeyError, ValueError, ZeroDivisionError):
         raise ValueError("The source frame and audio clocks could not be established.") from None
     if not 1 <= fps <= 240 or sample_rate <= 0:
         raise ValueError("Unsupported source frame or sample rate.")
-    frame_index = round(Fraction(str(freeze_time)) * fps)
-    freeze = float(frame_index / fps)
-    resume_frame = frame_index + int(resume_next_frame)
-    resume = float(resume_frame / fps)
-    start, end = freeze - LEAD_SECONDS, resume + tail_seconds
-    if start < 0 or end > min(_duration(video, raw), _duration(audio, raw)) + 0.000001:
-        raise ValueError(f"This frame needs the full {LEAD_SECONDS} seconds before it and {tail_seconds} seconds after it.")
-    return {"start": start, "freeze_time": freeze, "end": end,
-            "freeze_frame": frame_index, "source_fps": str(fps),
+    window = media.cut_window(freeze_time, media.video_duration(raw, video), fps, tail_seconds,
+                              resume_next_frame=resume_next_frame)
+    origin = float(raw.get("format", {}).get("start_time", 0))
+    audio_start = float(audio.get("start_time", origin)) - origin if audio else 0.
+    audio_end = audio_start + media.video_duration(raw, audio) if audio else 0.
+    return {**window,
             "source_size": [video["width"], video["height"]],
-            "resume_time": resume, "resume_frame": resume_frame,
-            "resume_next_frame": resume_next_frame,
             "source_sample_rate": sample_rate,
-            "freeze_audio_sample": round(freeze * sample_rate),
-            "resume_audio_sample": round(resume * sample_rate),
-            "tail_seconds": tail_seconds}
+            "source_audio_present": bool(audio), "source_audio_start": audio_start, "source_audio_end": audio_end,
+            "freeze_audio_sample": round(window["freeze_time"] * sample_rate),
+            "resume_audio_sample": round(window["resume_time"] * sample_rate),
+            "tail_seconds": window["actual_tail_seconds"]}
 
 
 def _output_size(value=None):
@@ -97,6 +89,28 @@ def _audio_filter(duration):
     return (f"atrim=duration={duration:.9f},asetpts=PTS-STARTPTS,"
             f"aresample={OUTPUT_SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"
             f"apad,atrim=duration={duration:.9f}")
+
+
+def _source_audio(index, start, duration, window):
+    available = (window["source_audio_present"] and window["source_audio_end"] > start
+                 and window["source_audio_start"] < start + duration)
+    if not available:
+        return f"anullsrc=r={OUTPUT_SAMPLE_RATE}:cl=stereo,{_audio_filter(duration)}"
+    delay = max(0., window["source_audio_start"] - start)
+    prefix = f"[{index}:a:0]"
+    if delay:
+        prefix += f"asetpts=PTS-STARTPTS,adelay={round(delay * 1000)}:all=1,"
+    return prefix + _audio_filter(duration)
+
+
+def _source_audio_provenance(start, duration, window):
+    if duration == 0:
+        return "no_source_tail"
+    if not window["source_audio_present"]:
+        return "silence_no_source_audio"
+    if window["source_audio_end"] < start + duration - .001:
+        return "original_source_padded_at_audio_eof"
+    return "original_source"
 
 
 def _verify(path, expected_duration, endpoint_frames=None, output_size=None):
@@ -187,6 +201,7 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
     if not isinstance(resume_next_frame, bool):
         raise ValueError("Next-frame resumption must be explicitly true or false.")
     window = _source_window(source_path, freeze_time, tail_seconds, resume_next_frame)
+    actual_tail = window["actual_tail_seconds"]
     raw, video, _ = _probe(orbit_path)
     if not video:
         raise ValueError("The camera orbit needs a video track.")
@@ -232,33 +247,37 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
         if not crowd_audio or _duration(crowd_audio, crowd_raw) < .1:
             raise ValueError("The crowd recording needs a nonempty audio track.")
     target, temp = _temporary_output(output_path)
-    total = LEAD_SECONDS + orbit_seconds + tail_seconds
+    total = LEAD_SECONDS + orbit_seconds + actual_tail
     args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-xerror", "-y",
             "-ss", f"{window['start']:.9f}", "-t", str(LEAD_SECONDS), "-i", source_path,
-            "-i", orbit_path, "-ss", f"{window['resume_time']:.9f}",
-            "-t", str(tail_seconds), "-i", source_path]
+            "-i", orbit_path]
+    if actual_tail:
+        args += ["-ss", f"{window['resume_time']:.9f}", "-t", f"{actual_tail:.9f}", "-i", source_path]
+    bed_input = 3 if actual_tail else 2
     if crowd_path is not None:
         args += ["-stream_loop", "-1", "-i", crowd_path]
-    else:
-        args += ["-f", "lavfi", "-i", f"anullsrc=r={OUTPUT_SAMPLE_RATE}:cl=stereo"]
-    audio_lead = _audio_filter(LEAD_SECONDS)
-    audio_tail = _audio_filter(tail_seconds)
+    audio_lead = _source_audio(0, window["start"], LEAD_SECONDS, window)
+    audio_tail = _source_audio(2, window["resume_time"], actual_tail, window) if actual_tail else None
     if crowd_path:
         audio_lead += f",afade=t=out:st={LEAD_SECONDS - JOIN_FADE_SECONDS}:d={JOIN_FADE_SECONDS}"
-        audio_tail += f",afade=t=in:st=0:d={JOIN_FADE_SECONDS}"
+        if actual_tail:
+            audio_tail += f",afade=t=in:st=0:d={min(JOIN_FADE_SECONDS, actual_tail)}"
     graph_parts = [
         f"[0:v:0]{_video_filter(LEAD_SECONDS, output_size)}[lead_v]",
-        f"[0:a:0]{audio_lead}[lead_a]",
+        f"{audio_lead}[lead_a]",
         f"[1:v:0]{_video_filter(orbit_seconds, output_size)}[orbit_v]",
         f"anullsrc=r={OUTPUT_SAMPLE_RATE}:cl=stereo,{_audio_filter(orbit_seconds)}[orbit_a]",
-        f"[2:v:0]{_video_filter(tail_seconds, output_size)}[tail_v]",
-        f"[2:a:0]{audio_tail}[tail_a]",
-        "[lead_v][lead_a][orbit_v][orbit_a][tail_v][tail_a]concat=n=3:v=1:a=1[v][original_audio]",
     ]
+    if actual_tail:
+        graph_parts += [f"[2:v:0]{_video_filter(actual_tail, output_size)}[tail_v]",
+                        f"{audio_tail}[tail_a]",
+                        "[lead_v][lead_a][orbit_v][orbit_a][tail_v][tail_a]concat=n=3:v=1:a=1[v][original_audio]"]
+    else:
+        graph_parts.append("[lead_v][lead_a][orbit_v][orbit_a]concat=n=2:v=1:a=1[v][original_audio]")
     if crowd_path:
-        bed_duration = orbit_seconds + 2 * JOIN_FADE_SECONDS
+        bed_duration = orbit_seconds + JOIN_FADE_SECONDS + min(JOIN_FADE_SECONDS, actual_tail)
         delay = round((LEAD_SECONDS - JOIN_FADE_SECONDS) * 1000)
-        graph_parts += [f"[3:a:0]{_audio_filter(bed_duration)},afade=t=in:st=0:d={JOIN_FADE_SECONDS},"
+        graph_parts += [f"[{bed_input}:a:0]{_audio_filter(bed_duration)},afade=t=in:st=0:d={JOIN_FADE_SECONDS},"
                         f"afade=t=out:st={bed_duration - JOIN_FADE_SECONDS}:d={JOIN_FADE_SECONDS},"
                         f"adelay={delay}|{delay},apad,atrim=duration={total}[bed_audio]",
                         "[original_audio][bed_audio]amix=inputs=2:duration=first:normalize=0[a]"]
@@ -304,6 +323,8 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
             generated_crowd.unlink(missing_ok=True)
     orbit_end = LEAD_SECONDS + orbit_seconds
     return {"path": str(target), "media": details, "source_window": window,
+            "tail_seconds": tail_seconds, "requested_tail_seconds": tail_seconds,
+            "actual_tail_seconds": actual_tail,
             "timings": {"preparation": encode_started - started,
                         "encode": verify_started - encode_started,
                         "verification": verified_at - verify_started,
@@ -317,7 +338,9 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
                                       "orbit_input_size": [video["width"], video["height"]],
                                       "orbit_input_upscaled": output_size[0] > video["width"] or output_size[1] > video["height"]},
             "reference_closure": reference_closure,
-            "audio_provenance": {"lead": "original_source", "tail": "original_source",
+            "audio_provenance": {"lead": _source_audio_provenance(window["start"], LEAD_SECONDS, window),
+                                 "tail": _source_audio_provenance(window["resume_time"], actual_tail, window),
+                                 "source_audio_present": window["source_audio_present"],
                                  "orbit": ("source_crowd_fallback" if crowd_provenance and crowd_provenance.get("reused_stadium_ambience") else
                                            "source_crowd_centre_suppressed" if crowd_provenance else
                                            "supplied_crowd_recording" if crowd_path else "silence_no_crowd_recording"),
@@ -329,8 +352,8 @@ def assemble(source_path, orbit_path, freeze_time, output_path, tail_seconds=Non
                 {"kind": "source_lead", "output_start": 0, "output_end": LEAD_SECONDS,
                  "source_start": window["start"], "source_end": window["freeze_time"]},
                 {"kind": "camera_orbit", "output_start": LEAD_SECONDS, "output_end": orbit_end},
-                {"kind": "source_tail", "output_start": orbit_end, "output_end": total,
-                 "source_start": window["resume_time"], "source_end": window["end"]},
+                *([{"kind": "source_tail", "output_start": orbit_end, "output_end": total,
+                    "source_start": window["resume_time"], "source_end": window["end"]}] if actual_tail else []),
             ]}
 
 
@@ -351,7 +374,13 @@ def combine(paths, output_path):
         output_size = dimensions
         if output_size not in {OUTPUT_SIZE, (3840, 2160)}:
             raise ValueError("Combined highlights need a supported 1080p or 4K delivery resolution.")
-        durations.append(_duration(video, raw))
+        try:
+            frame_count = int(video["nb_frames"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("A completed highlight is missing its video frame count.") from None
+        if frame_count <= 0:
+            raise ValueError("A completed highlight must contain video frames.")
+        durations.append(frame_count / OUTPUT_FPS)
         _verify(path, durations[-1], output_size=output_size)
     target, temp = _temporary_output(output_path)
     descriptor, filename = tempfile.mkstemp(prefix=".reel-", suffix=".txt", dir=target.parent)
@@ -360,7 +389,11 @@ def combine(paths, output_path):
     try:
         if any("\n" in str(path) or "\r" in str(path) for path in paths):
             raise ValueError("Media paths cannot contain line breaks.")
-        listing.write_text("".join("file '" + str(path).replace("'", "'\\''") + "'\n" for path in paths))
+        # MP4 container duration includes rounded audio padding. Use the picture
+        # clock for each boundary so fractional-second clips stay exactly 30 fps.
+        listing.write_text("".join("file '" + str(path).replace("'", "'\\''") +
+                                   f"'\nduration {duration:.12f}\n"
+                                   for path, duration in zip(paths, durations)))
         media.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-xerror", "-y",
                    "-f", "concat", "-safe", "0", "-i", listing, "-c:v", "copy",
                    "-af", "aresample=async=1:first_pts=0", "-c:a", "aac", "-b:a", "192k",

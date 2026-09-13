@@ -7,7 +7,7 @@ Diagonal examples in this documentation yet.
 
 ## F1 example
 
-The README previews come from an existing completed edit of Red Bull's
+The README previews come from a previously completed 18-second edit of Red Bull's
 [Jumping Over A Moving F1 Car (world first)](https://www.youtube.com/watch?v=8o40mSS05iE),
 published on the [Red Bull YouTube channel](https://www.youtube.com/channel/UCblfuW_4rakIf2h6aqANefA).
 The selected reference is at **586.36 seconds (9:46.36)** in that source.
@@ -23,7 +23,9 @@ endpoint, requesting `1080P` and six seconds. The returned video had 1920 × 108
 frames at 24 fps and a 6.583333-second picture track. Local processing retimed its
 complete timeline to six seconds at 30 fps, enlarged the generated frames for
 the 3840 × 2160 delivery, and inserted the saved source reference at both
-endpoints. The finished edit lasts 18 seconds.
+endpoints. That historical edit lasts 18 seconds, with an 8-second lead, 6-second
+orbit and 4-second tail. New edits use a 4-second lead, 6-second orbit and up to
+10 seconds of continuation; these preview files have not been regenerated.
 
 The GIF and still were made with FFmpeg from that finished edit. Their smaller
 size and frame rate are for the README. They show generated scene changes as
@@ -37,8 +39,10 @@ rights holders; the repository's MIT code license does not grant rights to that
 third-party material. This is an independent software demonstration, with no
 claim of endorsement by Red Bull, Formula 1 or Fal.
 
-To make equivalent previews from your own completed 8/6/4 edit, use these commands.
-They read `highlight.mp4` and write new documentation files:
+These commands reproduce the previews from the historical 8/6/4 layout. They read
+`highlight.mp4` and write new documentation files. For a new 4/6/up-to-10 edit,
+the orbit starts at 4 seconds: use `-ss 4` and select frames 120, 165, 210 and 255
+in the second command instead.
 
 ```sh
 ffmpeg -v error -ss 8 -i highlight.mp4 -t 6 \

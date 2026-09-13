@@ -31,6 +31,19 @@ class MediaTests(unittest.TestCase):
         binary.chmod(0o755)
         return binary, calls
 
+    def test_configured_ffmpeg_uses_its_companion_probe_for_matching_decoder_support(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            binary, _ = self._fake_ffmpeg(root, modern=True)
+            probe = root / "ffprobe"
+            probe.write_text(f"#!{sys.executable}\nprint('paired probe')\n")
+            probe.chmod(0o755)
+            with patch.dict(os.environ, {"FOOTBALL_FFMPEG": str(binary)}):
+                self.assertEqual(media.run(["ffprobe", "-version"]), b"paired probe\n")
+            probe.unlink()
+            with patch.dict(os.environ, {"FOOTBALL_FFMPEG": str(binary)}):
+                self.assertEqual(media._media_command(["ffprobe", "-version"]), ["ffprobe", "-version"])
+
     def test_default_ffmpeg_and_ffprobe_commands_remain_unchanged(self):
         result = subprocess.CompletedProcess([], 0, b"ok", b"")
         with patch.dict(os.environ, {"FOOTBALL_FFMPEG": ""}), \
@@ -80,13 +93,29 @@ class MediaTests(unittest.TestCase):
 
     def test_fractional_frame_clock_and_required_tail(self):
         fps = 30000 / 1001
-        window = media.cut_window(123.456, 900, fps, 4)
+        window = media.cut_window(123.456, 900, fps, 10)
         self.assertAlmostEqual(window["freeze_time"] * fps, round(123.456 * fps))
-        self.assertAlmostEqual(window["final_seconds"], 18)
-        self.assertAlmostEqual(window["source_seconds"], 12)
-        for time in (0, 899, float("nan")):
+        self.assertAlmostEqual(window["final_seconds"], 20)
+        self.assertAlmostEqual(window["source_seconds"], 14 + 1 / fps)
+        for time in (0, 901, float("nan")):
             with self.assertRaises(ValueError):
                 media.cut_window(time, 900, fps)
+
+    def test_selection_bounds_and_tail_use_the_last_video_frame(self):
+        bounds = media.frame_selection_bounds(8, 30)
+        self.assertEqual((bounds["min_frame"], bounds["max_frame"]), (120, 239))
+        self.assertEqual((bounds["min_time"], bounds["max_time"]), (4, 239 / 30))
+        last = media.cut_window(bounds["max_time"], 8, 30)
+        self.assertEqual(last["resume_frame"], 240)
+        self.assertEqual(last["actual_tail_seconds"], 0)
+        self.assertEqual(last["tail_seconds"], 10)
+        self.assertEqual(last["end"], 8)
+        self.assertEqual(last["final_seconds"], 10)
+        partial = media.cut_window(6, 8, 30)
+        self.assertAlmostEqual(partial["actual_tail_seconds"], 2 - 1 / 30)
+        self.assertAlmostEqual(partial["final_seconds"], 12 - 1 / 30)
+        with self.assertRaisesRegex(ValueError, "full 4 seconds"):
+            media.frame_selection_bounds(4, 30)
 
     def test_rolling_captions_do_not_repeat_cue(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -117,11 +146,11 @@ class MediaTests(unittest.TestCase):
     def test_failed_frame_does_not_save_new_time(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(server, "DATA", Path(directory)):
             project = {"media": {"duration": 900, "fps": 30},
-                       "candidates": [{"id": "cut1", "freeze_time": 20, "selected": False, "tail_seconds": 4}]}
+                       "candidates": [{"id": "cut1", "freeze_time": 20, "selected": False, "tail_seconds": 10}]}
             media.write_json(server.manifest(server.SEED), project)
             with patch.object(media, "extract_frame", side_effect=RuntimeError("decode failed")):
                 with self.assertRaises(RuntimeError):
-                    server.frame(server.SEED, "cut1", 30, 4)
+                    server.frame(server.SEED, "cut1", 30, 10)
             self.assertEqual(server.load_project(server.SEED), project)
 
     def test_selection_changed_during_analysis_survives(self):

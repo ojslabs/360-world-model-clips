@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import time
@@ -15,7 +16,7 @@ from scipy.signal import resample_poly
 
 import media
 
-METHOD = "source_slow_motion_loop_v2"
+METHOD = "source_slow_motion_loop_v3"
 SOURCE_SECONDS = 1.75
 PLAYBACK_SPEED = .75
 SPEED_RAMP_SECONDS = .75
@@ -55,6 +56,95 @@ def _speed_positions(frames):
     return positions, ramp
 
 
+def _strict_media(args):
+    """A clean exit and no error-level decoder messages are both required."""
+    result = subprocess.run(media._media_command(args), capture_output=True, timeout=60)
+    if result.returncode or result.stderr.strip():
+        raise ValueError("Could not decode the original source audio. Its recording was preserved.")
+    return result.stdout
+
+
+def _number(value):
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _stream_duration(stream, fallback=None):
+    direct = _number(stream.get("duration"))
+    if direct is not None:
+        return direct
+    tag = stream.get("tags", {}).get("DURATION")
+    if isinstance(tag, str):
+        try:
+            hours, minutes, seconds = map(float, tag.split(":"))
+            duration = hours * 3600 + minutes * 60 + seconds
+            if math.isfinite(duration):
+                return duration
+        except ValueError:
+            pass
+    return _number(fallback)
+
+
+def _source_window(source, freeze_time):
+    """Read this window, distinguishing an absent track, clean EOF and failure."""
+    try:
+        details = json.loads(_strict_media(["ffprobe", "-v", "error", "-show_streams",
+                                           "-show_format", "-of", "json", source]))
+        streams = details["streams"]
+        video = next((s for s in streams if s.get("codec_type") == "video"), None)
+        audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+        primary = video if video is not None else audio
+        if primary is None:
+            raise ValueError("No playable media stream")
+        duration = _stream_duration(primary, details.get("format", {}).get("duration"))
+        if duration is None or duration <= 0 or freeze_time > duration + 1 / SAMPLE_RATE:
+            raise ValueError("The freeze frame is outside the original source timeline.")
+    except (KeyError, TypeError, json.JSONDecodeError):
+        raise ValueError("The original source streams could not be read.") from None
+    expected = round(SOURCE_SECONDS * SAMPLE_RATE)
+    if audio is None:
+        return np.zeros((expected, 2), dtype=np.float32), b"", {
+            "source_audio_present": False, "source_audio_channels": 0,
+            "source_window_state": "no_audio_stream", "silence_reason": "no_audio_stream",
+            "extracted_source_seconds": 0, "padded_source_seconds": SOURCE_SECONDS,
+            "padding_reason": "no_audio_stream"}
+    raw = _strict_media(["ffmpeg", "-v", "error", "-xerror", "-ss", f"{freeze_time - SOURCE_SECONDS:.9f}",
+                         "-i", source, "-t", str(SOURCE_SECONDS), "-map", "0:a:0", "-vn",
+                         "-af", f"aresample={SAMPLE_RATE}:async=1:first_pts=0", "-ac", "2",
+                         "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"])
+    if len(raw) % 8:
+        raise ValueError("The decoded source audio has an incomplete sample frame.")
+    samples = np.frombuffer(raw, dtype="<f4").reshape(-1, 2)
+    if len(samples) > expected or not np.isfinite(samples).all():
+        raise ValueError("The decoded source audio contains invalid samples or timing.")
+    count = len(samples)
+    origin = _number(details.get("format", {}).get("start_time")) or 0
+    audio_start = (_number(audio.get("start_time")) or 0) - origin
+    audio_duration = _number(audio.get("duration"))
+    tagged_end = _stream_duration(audio)
+    # Matroska DURATION tags encode the ending timestamp, unlike stream.duration.
+    audio_end = (audio_start + audio_duration if audio_duration is not None else
+                 tagged_end - origin if tagged_end is not None else None)
+    if count < expected:
+        # Known stream metadata must agree with a clean end of input. Do not
+        # disguise missing decoded data in the middle of a recording as silence.
+        if audio_end is not None and audio_end > freeze_time + .05:
+            raise ValueError("The source audio ended unexpectedly before the selected window was decoded.")
+        samples = np.pad(samples, ((0, expected - count), (0, 0)))
+    is_silent = not np.any(samples)
+    state = ("audio_ended" if count == 0 else "partial_audio_eof" if count < expected else
+             "silent" if is_silent else "audible")
+    return samples, raw, {"source_audio_present": True, "source_audio_channels": audio.get("channels"),
+                         "source_window_state": state,
+                         "silence_reason": "audio_ended" if count == 0 else "silent_source_window" if is_silent else None,
+                         "extracted_source_seconds": count / SAMPLE_RATE,
+                         "padded_source_seconds": (expected - count) / SAMPLE_RATE,
+                         "padding_reason": "clean_audio_eof" if count < expected else None}
+
+
 def prepare_slow_source_bed(source, freeze_time, output_dir, seconds=6.5):
     """Loop pre-freeze audio while easing from 1x to 0.75x and back to 1x.
 
@@ -88,18 +178,8 @@ def prepare_slow_source_bed(source, freeze_time, output_dir, seconds=6.5):
     if target.exists():
         raise ValueError("An existing source audio loop has no matching receipt; choose a new cache directory.")
     source_start = freeze_time - SOURCE_SECONDS
-    raw = media.run(["ffmpeg", "-v", "error", "-xerror", "-ss", f"{source_start:.9f}", "-i", source,
-                     "-t", str(SOURCE_SECONDS), "-vn", "-ac", "2", "-ar", str(SAMPLE_RATE),
-                     "-f", "f32le", "-"], timeout=60)
-    values = np.frombuffer(raw, dtype="<f4")
-    if len(values) != round(SOURCE_SECONDS * SAMPLE_RATE) * 2:
-        raise ValueError("The source did not provide the complete pre-freeze audio window.")
-    samples = values.reshape(-1, 2)
-    if not np.isfinite(samples).all():
-        raise ValueError("The source audio contains invalid samples.")
+    samples, raw, window_provenance = _source_window(source, freeze_time)
     source_rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
-    if source_rms < .00001:
-        raise ValueError("The selected pre-freeze source audio is silent; choose an audible moment.")
     positions, ramp = _speed_positions(round(seconds * SAMPLE_RATE))
     repeated, source_joins = _loop(samples, math.ceil(positions[-1]) + 2,
                                    round(LOOP_CROSSFADE_SECONDS * SAMPLE_RATE))
@@ -127,7 +207,7 @@ def prepare_slow_source_bed(source, freeze_time, output_dir, seconds=6.5):
         provenance = {"method": METHOD, "source_file": source.name,
                       "source_video_id": source.parent.name if media.VIDEO_ID.fullmatch(source.parent.name) else None,
                       "source_start": source_start, "source_end": freeze_time,
-                      "source_seconds": SOURCE_SECONDS,
+                      "source_seconds": SOURCE_SECONDS, **window_provenance,
                       "speed_envelope": {"curve": "raised_cosine", "start": 1,
                                          "minimum": PLAYBACK_SPEED, "end": 1, "ramp_seconds": ramp,
                                          "hold_start": ramp, "hold_end": seconds - ramp},
@@ -140,7 +220,7 @@ def prepare_slow_source_bed(source, freeze_time, output_dir, seconds=6.5):
                       "bed_sha256": hashlib.sha256(temporary.read_bytes()).hexdigest(),
                       "source_pcm_sha256": hashlib.sha256(raw).hexdigest(),
                       "source_fingerprint": identity["source"], "reused_stadium_ambience": False,
-                      "speech_separated": False, "classification": "unaltered_source_content",
+                      "speech_separated": False, "classification": "whole_source_mix" if window_provenance["source_audio_present"] else "source_without_audio",
                       "preparation_seconds": time.perf_counter() - started}
         os.link(temporary, target)
         media.write_json(receipt_path, {"identity": identity, "provenance": provenance})

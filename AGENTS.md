@@ -24,16 +24,22 @@ fonts and preserve the content-derived build fingerprint.
 - Only titles containing the case-insensitive whole word `football` receive
   captions and audio analysis. Other titles use full-video manual selection.
   Preserve curated candidates and saved frames on reimport.
-- Derive timing from `media.DEFAULTS`: currently 8 seconds before, 6 seconds of
-  orbit and 4 seconds after. Require complete source context.
+- Derive timing from `media.DEFAULTS`: currently 4 seconds before, 6 seconds of
+  orbit and up to 10 seconds after, at most 20 seconds total. Require the full lead;
+  cap the tail at the remaining video from the next source frame. A selection on
+  the last frame has no tail. Preserve historical output timing and metadata.
 - Preserve native Fal output. Retiming uses the whole timeline. Reference anchoring
   keeps one saved PNG at each endpoint; verify equality after final composition.
   Do not claim this verifies frozen generated subjects or a complete camera turn.
 - Keep 4K source/reference detail until final rendering. Record enlargement of
   generated 1080p frames. Combined reels require matching dimensions.
-- Preserve source audio timing. The source slow-motion override uses short local
-  extraction, smooth speed ramps and no boost. Crowd processing must retain honest
-  provenance and must not silently replace a failed extraction with silence.
+- Every new output automatically loops the source's own pre-freeze audio mix under
+  the orbit. Ease speed and pitch from 1x to 0.75x to 1x; retain music, speech and
+  background noise without volume boost. Preserve source audio timing outside the
+  orbit. Genuine silence and a verified missing audio stream stay silent; pad clean
+  audio EOF and report probe/decode failures. No source override, speech separation,
+  full-video analysis or provider call is needed for this local effect. Keep earlier
+  audio methods and their receipts intact when producing a revised output.
 - Generation, visual labels and import are separate operations. Recovery reads
   acknowledged requests and saved media; it never repeats an ambiguous paid POST.
 - Reactor X2 remixes are an optional operation on completed highlights, using the

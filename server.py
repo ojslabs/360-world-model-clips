@@ -111,6 +111,18 @@ def update_project(video_id, **changes):
 def public_project(video_id):
     project = load_project(video_id)
     project["audio_mode"] = audio_mode(video_id)
+    details = project.get("media", {})
+    if details.get("duration") and details.get("fps"):
+        try:
+            project["frame_selection"] = media.frame_selection_bounds(details["duration"], details["fps"])
+        except ValueError:
+            project["frame_selection"] = None
+        for candidate in project.get("candidates", []):
+            try:
+                candidate["edit_window"] = media.cut_window(candidate.get("freeze_time", candidate.get("time")),
+                                                          details["duration"], details["fps"])
+            except (ValueError, TypeError):
+                candidate["edit_window"] = None
     project.setdefault("source_quality", {"selection": "existing_unverified"})
     project.setdefault("original_url", f"/media/{video_id}/{source_path(video_id).name}")
     project.setdefault("preview_url", project.get("video_url"))
@@ -198,8 +210,8 @@ def delivery_ready(video_id, run):
         return True
     anchored = bool(run.get("delivery", {}).get("anchor_reference")
                     or run.get("preset_id") == "fal-h3-max-frozen-orbit-v2")
-    tail = run.get("tail_seconds", media.DEFAULTS["tail_seconds"])
-    return any(c.get("tail_seconds") == tail and exists(c.get("url"))
+    # A finished registered edit remains ready after defaults change.
+    return any(exists(c.get("url"))
                and (not anchored or c.get("reference_anchored") is True)
                for c in run.get("composites", []))
 
@@ -544,9 +556,11 @@ def manual_project(video_id):
         project = load_project(video_id)
         duration, fps = project["media"]["duration"], project["media"]["fps"]
         lead, tail = media.DEFAULTS["lead_seconds"], media.DEFAULTS["tail_seconds"]
-        frame_number = math.ceil(lead * fps)
-        freeze_time = frame_number / fps
-        available = freeze_time + tail + 1 / fps <= duration
+        try:
+            bounds = media.frame_selection_bounds(duration, fps)
+            freeze_time, available = bounds["min_time"], True
+        except ValueError:
+            freeze_time, available = lead, False
         found = list(project.get("candidates", []))
         if available and not any(item.get("kind") == "manual" or item.get("id") == "manual" for item in found):
             found.append({"id": "manual", "kind": "manual", "time": freeze_time,
@@ -579,7 +593,8 @@ def analyze(video_id, *, on_progress=None):
         caption_file = location / "captions.en.vtt"
     transcript = media.captions(caption_file)
     speech = media.commentary_events(transcript)
-    audio, waveform = media.audio_activity(source_path(video_id), location)
+    audio, waveform = (media.audio_activity(source_path(video_id), location)
+                       if project["media"].get("audio_present", True) else ([], []))
     found = media.candidates(speech + audio, project["media"]["duration"])
     # Preserve user selections when analysis is repeated.
     media.write_json(location / "transcript.json", transcript)
@@ -837,8 +852,7 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, cre
             selected_frame = folder(video_id) / "frames" / f"{item['id']}.png"
         chosen_path = orbit_paths.selection(orbit_path or orbit_paths.DEFAULT)
         request = media.orbit_request("SAVED_FRAME", chosen_path["id"])
-        media.cut_window(item["freeze_time"], project["media"]["duration"], project["media"]["fps"],
-                         item.get("tail_seconds", media.DEFAULTS["tail_seconds"]))
+        edit_window = media.cut_window(item["freeze_time"], project["media"]["duration"], project["media"]["fps"])
         if not selected_frame.is_file():
             raise ValueError("The saved frame file is missing. Set the freeze frame again.")
         runs = project.setdefault("generations", [])
@@ -855,7 +869,8 @@ def start_generation(video_id, mode, reference_run_id=None, *, item_id=None, cre
                   "status": "queued", "created_at": time.time(), "kind": "World model clip",
                   "model": connection["model"], "provider": "Fal", "item_id": item["id"],
                   "freeze_time": item["freeze_time"], "tail_seconds": item.get("tail_seconds", media.DEFAULTS["tail_seconds"]),
-                  "lead_seconds": media.DEFAULTS["lead_seconds"],
+                  "lead_seconds": media.DEFAULTS["lead_seconds"], "edit_window": edit_window,
+                  "audio_mode": audio_mode(video_id),
                   "frame_sha256": hashlib.sha256(frame_path.read_bytes()).hexdigest(),
                   "preset_id": media.ORBIT_PRESET["id"],
                   "orbit_path": chosen_path["id"], "orbit_path_label": chosen_path["label"],
@@ -926,7 +941,7 @@ def execute_generation(video_id, run_id, *, resume_only=False, credential=None):
     def generate():
         if resume_only and snapshot.get("status") == "complete":
             try:
-                assemble_highlight(video_id, run_id, snapshot["tail_seconds"], on_progress=local_progress)
+                assemble_highlight(video_id, run_id, on_progress=local_progress)
                 local_progress("complete")
                 return read_run(video_id, run_id)
             except Exception:
@@ -971,7 +986,7 @@ def execute_generation(video_id, run_id, *, resume_only=False, credential=None):
             save(status="failed", error=message)
             raise RuntimeError(message) from None
         try:
-            assemble_highlight(video_id, run_id, saved["tail_seconds"], on_progress=local_progress)
+            assemble_highlight(video_id, run_id, on_progress=local_progress)
             local_progress("complete")
             return next(r for r in load_project(video_id)["generations"] if r["id"] == run_id)
         except Exception:
@@ -986,10 +1001,8 @@ def delivery_size(project):
 
 
 def audio_mode(video_id):
-    overrides = {**media.read_json(ROOT / "config" / "audio-overrides.json", {}),
-                 **media.read_json(DATA / "audio-overrides.json", {})}
-    override = overrides.get(video_id)
-    return "source_slow_motion" if override == "source_slow_motion" else "crowd_atmosphere"
+    # Every new edit uses this video's own complete soundtrack.
+    return "source_slow_motion"
 
 
 def reference_delivery(video_id, run_id):
@@ -1029,7 +1042,7 @@ def reference_delivery(video_id, run_id):
 
 def assemble_highlight(video_id, run_id, tail=None, *, on_progress=None):
     import composite
-    import crowd_audio
+    import source_atmosphere
     if tail is None:
         tail = media.DEFAULTS["tail_seconds"]
     if isinstance(tail, bool) or tail != media.DEFAULTS["tail_seconds"]:
@@ -1047,10 +1060,7 @@ def assemble_highlight(video_id, run_id, tail=None, *, on_progress=None):
     resume_next_frame = run.get("delivery", {}).get("resume_next_frame", False)
     join_version = "cut_next_frame_v1" if transition == "cut" and resume_next_frame else "legacy_v1"
     target = folder(video_id) / "exports" / run_id
-    source_audio_effect = audio_mode(video_id) == "source_slow_motion"
-    if source_audio_effect:
-        import source_atmosphere
-    audio_version = source_atmosphere.METHOD if source_audio_effect else crowd_audio.AUDIO_VERSION
+    audio_version = source_atmosphere.METHOD
     suffix = "-matched" if anchored else ""
     suffix += f"-{audio_version}"
     if join_version != "legacy_v1":
@@ -1077,15 +1087,19 @@ def assemble_highlight(video_id, run_id, tail=None, *, on_progress=None):
             options["output_size"] = output_size
         if resume_next_frame:
             options["resume_next_frame"] = True
-        if source_audio_effect:
-            bed = source_atmosphere.prepare_slow_source_bed(source_path(video_id), run["freeze_time"],
-                                                          target, seconds=seconds + 2 * composite.JOIN_FADE_SECONDS)
-            options.update(crowd_path=bed["path"], crowd_provenance=bed["provenance"], auto_crowd=False)
+        source_window = media.cut_window(run["freeze_time"], project["media"]["duration"],
+                                         project["media"]["fps"], tail, resume_next_frame=resume_next_frame)
+        bed_seconds = seconds + composite.JOIN_FADE_SECONDS + min(composite.JOIN_FADE_SECONDS,
+                                                                  source_window["actual_tail_seconds"])
+        bed = source_atmosphere.prepare_slow_source_bed(source_path(video_id), run["freeze_time"],
+                                                      target, seconds=bed_seconds)
+        options.update(crowd_path=bed["path"], crowd_provenance=bed["provenance"], auto_crowd=False)
         receipt = composite.assemble(source_path(video_id), target / Path(urlparse(run["url"]).path).name,
                                      run["freeze_time"], pending, tail_seconds=tail, **options)
         receipt.pop("path", None)
-        if source_audio_effect:
-            receipt["audio_provenance"].update(orbit="source_slow_motion_loop", audio_version=audio_version)
+        receipt["audio_provenance"].update(orbit="source_slow_motion_loop", audio_version=audio_version,
+                                            source_audio=bed["provenance"])
+        receipt["audio_provenance"].pop("crowd_bed", None)
         native = run.get("native_media", {})
         receipt.setdefault("resolution_provenance", {}).update(
             source_size=[project.get("media", {}).get("width"), project.get("media", {}).get("height")],
@@ -1095,6 +1109,7 @@ def assemble_highlight(video_id, run_id, tail=None, *, on_progress=None):
         pending.replace(output)
         result = {"id": f"{run_id}-{lead}-{tail}{suffix}", "run_id": run_id, "tail_seconds": tail,
                   "lead_seconds": lead, "audio_version": audio_version,
+                  "actual_tail_seconds": receipt.get("source_window", {}).get("actual_tail_seconds", tail),
                   "join_version": join_version, "transition": transition,
                   "reference_anchored": anchored,
                   "url": f"/media/{video_id}/exports/{run_id}/{output.name}", **receipt}

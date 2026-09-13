@@ -140,15 +140,18 @@ class OrbitLoopTests(unittest.TestCase):
                                       reference_anchored=True, auto_crowd=False,
                                       resume_next_frame=True, output_size=(3840, 2160))
         self.assertEqual((finished["media"]["width"], finished["media"]["height"]), (3840, 2160))
-        self.assertEqual(finished["media"]["duration"], 18)
+        # At 25 fps the next source frame is 10.04s, leaving 7.96s of the
+        # requested ten-second tail. The 30 fps delivery contains 539 frames.
+        self.assertAlmostEqual(finished["source_window"]["tail_seconds"], 7.96)
+        self.assertAlmostEqual(finished["media"]["duration"], 539 / 30, places=5)
         self.assertEqual((finished["reference_closure"]["first_frame"],
-                          finished["reference_closure"]["last_frame"]), (240, 419))
+                          finished["reference_closure"]["last_frame"]), (120, 299))
         self.assertTrue(finished["reference_closure"]["first_last_pixel_hash_equal"])
         self.assertTrue(finished["media"]["decoded_video"] and finished["media"]["decoded_audio"])
         self.assertEqual(finished["source_window"]["resume_time"], 10.04)
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), source_hash)
         reel = composite.combine([finished["path"], finished["path"]], self.root / "reel-4k.mp4")
-        self.assertEqual(reel["media"]["duration"], 36)
+        self.assertAlmostEqual(reel["media"]["duration"], 1078 / 30, places=5)
         self.assertEqual((reel["media"]["width"], reel["media"]["height"]), (3840, 2160))
         # Same codecs and clocks cannot make unlike resolutions safe to stream-copy.
         small = self.root / "finished-1080p.mp4"

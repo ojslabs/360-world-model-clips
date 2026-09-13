@@ -431,7 +431,7 @@ test("a direct-cut revision keeps its Clip number and exposes its previous edit"
   assert.equal(element("output-previous").hidden, true);
   assert.equal(element("output-transition").hidden, true);
   assert.match(element("output-audio").textContent, /Source audio with a slow-motion effect/);
-  assert.match(element("output-audio").textContent, /Original audio resumes afterwards/);
+  assert.match(element("output-audio").textContent, /return to normal speed/);
 });
 
 test("search preview opens the actual embed without import or generation and clears playback on close", async () => {
@@ -495,7 +495,7 @@ test("presentation hides the provider name while preserving raw receipts and der
   assert.equal(historicalJob.kind, "Generate H3 Max camera orbit");
   vm.runInContext("state = { projects: [], defaults: { lead_seconds: 3, orbit_seconds: 6, tail_seconds: 4 } };", context);
   tracker.updateTiming();
-  assert.equal(element("timing-summary").textContent, "3s action + 6s generated moment + 4s resumed action = 13s");
+  assert.equal(element("timing-summary").textContent, "3s action + 6s generated moment + up to 4s resumed action = up to 13s");
 });
 
 test("the compact picker restores a saved frame without changing batch selections", () => {
@@ -890,4 +890,43 @@ test("generation polling keeps its existing three-second cadence", async () => {
   });
   assert.equal(result.status, "complete");
   assert.deepEqual(delays, [3000, 3000]);
+});
+
+test("edit timing uses the source-bounded tail and reaches the last selectable frame", () => {
+  const { context, tracker, element } = harness();
+  vm.runInContext(`state={projects:[{id:'source',media:{duration:9,fps:30},
+    frame_selection:{min_time:4,max_time:8.9666666667},
+    candidates:[{id:'frame',freeze_time:7,frame_url:'/frame.png',cue:'Full video',
+      edit_window:{actual_tail_seconds:1.9666666667,final_seconds:11.9666666667}}]}],
+    defaults:{lead_seconds:4,orbit_seconds:6,tail_seconds:10}};
+    activeId='frame';renderActionLabelStatus=()=>{};renderActive();`, context);
+  assert.equal(element("scrub").min,4);
+  assert.equal(element("scrub").max,8.9666666667);
+  assert.equal(element("timing-summary").textContent,"4s action + 6s generated moment + 1.97s resumed action = 11.97s");
+  vm.runInContext("state.projects[0].candidates[0].edit_window.actual_tail_seconds=0",context);
+  tracker.updateTiming();
+  assert.match(element("timing-summary").textContent,/0s resumed action = 10s$/);
+});
+
+test("new defaults are shown as a maximum until a saved source window is available",()=>{
+  const { context,tracker,element }=harness();
+  vm.runInContext("state={projects:[],defaults:{lead_seconds:4,orbit_seconds:6,tail_seconds:10}}",context);
+  tracker.updateTiming();
+  assert.equal(element("timing-summary").textContent,"4s action + 6s generated moment + up to 10s resumed action = up to 20s");
+});
+
+test("output review labels real silence and keeps historical edit timing",()=>{
+  const { context,tracker,element }=harness();
+  vm.runInContext("state={projects:[{id:'source',media:{width:1920,height:1080},video_url:'/source.mp4',generations:[]}],generation:{ready:true},defaults:{lead_seconds:4,orbit_seconds:6,tail_seconds:10}};viewedOutputs.set('source','prior')",context);
+  const clip={id:'prior',test_number:1,freeze_time:40,url:'/prior.mp4',media:{duration:18},lead_seconds:8,tail_seconds:4,
+    audio_provenance:{orbit:'source_slow_motion_loop',source_audio:{source_window_state:'no_audio_stream'}}};
+  tracker.renderOutputViewer([clip]);
+  assert.match(element('output-summary').textContent,/8s original action \+ 6s generated moment \+ 4s continued play/);
+  assert.match(element('output-audio').textContent,/stays silent/);
+  clip.audio_provenance.source_audio={source_window_state:'partial_audio_eof',silence_reason:'silent_source_window'};
+  tracker.renderOutputViewer([clip]);
+  assert.match(element('output-audio').textContent,/stays silent/);
+  clip.lead_seconds=4;clip.tail_seconds=10;clip.actual_tail_seconds=0;
+  tracker.renderOutputViewer([clip]);
+  assert.match(element('output-summary').textContent,/0s continued play/);
 });
