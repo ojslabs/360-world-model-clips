@@ -19,6 +19,11 @@ fonts and preserve the content-derived build fingerprint.
   both app and provider receipts. Recovery must reject another key and never use
   the server environment for browser-origin runs. Direct CLI run requires its own
   process `FAL_KEY`; status remains read-only.
+- Balance reads require the connected browser's Fal admin key. Use a read-only
+  billing request, one in flight per connection and a 60-second memory cache.
+  Loading or unavailable balances must not block generation. Discard results after
+  disconnect, key replacement or expiry; never use the owner's environment key or
+  persist billing responses, credentials or upstream errors.
 - Preserve original source bytes and timestamps. Browser previews are separate.
   Never silently lower download quality after failure.
 - Only titles containing the case-insensitive whole word `football` receive

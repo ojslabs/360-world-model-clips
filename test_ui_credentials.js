@@ -96,3 +96,52 @@ test("automatic app updates wait while a key is pasted or its connection is pend
   assert.ok(!h.requests.some(r=>r.reload));
   release({configured:true}); await connecting;
 });
+
+test("a connected key shows the returned currency balance without another browser request",async()=>{
+  const h=harness();h.element('fal-key').value='billing-test-key';
+  h.respond(async()=>({configured:true,verified:true,balance:{status:'ready',amount:24.5,currency:'USD',checked_at:1700000000}}));
+  await h.ui.connectFalKey();
+  assert.match(h.element('fal-balance-value').textContent,/24\.50/);
+  assert.match(h.element('fal-balance-detail').textContent,/Refreshes automatically/);
+  assert.equal(h.requests.length,1);assert.deepEqual(h.writes,[]);
+});
+
+test("zero and negative balances remain actual amounts rather than lookup failures",()=>{
+  const h=harness();
+  for(const amount of [0,-2.75]){
+    h.evaluate(`state.fal_credentials={configured:true,balance:{status:'ready',amount:${amount},currency:'USD'}}`);
+    h.ui.renderFalCredentials();
+    assert.equal(h.element('fal-balance-value').textContent,new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(amount));
+  }
+});
+
+test("billing permission failures do not show zero or disable an otherwise ready key",()=>{
+  const h=harness();h.evaluate("state.fal_credentials={configured:true,balance:{status:'forbidden'}};state.generation={ready:true}");
+  h.ui.renderFalCredentials();
+  assert.equal(h.element('fal-balance-value').textContent,'Not available');
+  assert.match(h.element('fal-balance-detail').textContent,/Admin API key/);
+  assert.equal(h.evaluate('state.generation.ready'),true);
+});
+
+test("loading, provider failures and malformed money never fabricate a balance",()=>{
+  const h=harness();
+  for(const balance of [{status:'loading'},{status:'unavailable'},{status:'ready',amount:'20',currency:'USD'},{status:'ready',amount:10,currency:'untrusted-text'}]){
+    h.evaluate(`state.fal_credentials={configured:true,balance:${JSON.stringify(balance)}}`);h.ui.renderFalCredentials();
+    assert.equal(h.element('fal-balance-value').textContent,balance.status==='loading'?'Checking…':'Not available');
+    assert.doesNotMatch(h.element('fal-balance-value').textContent,/NaN|0\.00|untrusted/);
+  }
+});
+
+test("disconnect removes a displayed balance and does not retain it in browser storage",async()=>{
+  const h=harness();h.evaluate("state.fal_credentials={configured:true,balance:{status:'ready',amount:73,currency:'USD'}}");
+  h.ui.renderFalCredentials();h.respond(async()=>({configured:false}));await h.ui.disconnectFalKey();
+  assert.equal(h.element('fal-balance-value').textContent,'');assert.equal(h.element('fal-key-connected').hidden,true);
+  assert.deepEqual(h.writes,[]);
+});
+
+test("ordinary account renders pick up refreshed balance state without a browser reload",()=>{
+  const h=harness();h.evaluate("state.fal_credentials={configured:true,balance:{status:'loading'}}");h.ui.renderFalCredentials();
+  h.evaluate("state.fal_credentials.balance={status:'ready',amount:12.34,currency:'EUR'}");h.ui.renderFalCredentials();
+  assert.match(h.element('fal-balance-value').textContent,/12\.34/);
+  assert.equal(h.requests.length,0);
+});

@@ -139,6 +139,12 @@ for up to eight hours. It is not saved to disk or preloaded into the page.
 Disconnect to remove it; reconnect after a server restart. Fal usage is charged
 to your account.
 
+The account panel shows your credit balance when the connected key has Fal admin
+billing access. Balance checks run in the background and refresh at most once a
+minute. Generation remains available when the key cannot read billing details.
+The balance stays in memory for that browser connection and clears when you
+disconnect or replace the key.
+
 Bootstrap installs the pinned Python dependencies, checks the media tools,
 downloads the verified speech model and builds the interface. See
 [setup](docs/setup.md) for Linux, Docker and shared-host configuration.

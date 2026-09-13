@@ -403,7 +403,6 @@ html,body,.paper.studio{background:#080808;color:var(--text)}
 .fal-key-status{font-size:11px;line-height:1.6;margin:10px 0 0;min-height:18px}
 .fal-key-status[data-error=true]{color:var(--text);padding-left:10px;border-left:2px solid var(--text2)}
 .fal-key-connected{display:flex;justify-content:space-between;align-items:center;gap:20px;font-size:12px;color:var(--text2)}
-.fal-key-connected>div{display:flex;align-items:center;gap:12px}
 .studio #fal-key-disconnect{font-size:12px;min-height:40px;padding:8px}
 @media(max-width:900px){.fal-account{grid-template-columns:1fr;gap:20px;padding:20px}.fal-account-copy .fal-key-privacy{max-width:none}}
 @media(max-width:480px){.fal-account{padding:16px;margin-bottom:28px}.fal-key-input-row{flex-wrap:wrap}.fal-key-input-wrap{flex-basis:100%}.studio #fal-key-connect{width:100%}.fal-key-connected{align-items:flex-start;flex-direction:column;gap:12px}}
@@ -432,3 +431,12 @@ html,body,.paper.studio{background:#080808;color:var(--text)}
 @media(max-width:1100px){.studio button.orbit-choice{flex-direction:column;align-items:flex-start;gap:8px;padding:16px}.orbit-choice-icon{width:95px}.orbit-choice-copy{padding-right:0}}
 @media(max-width:600px){.orbit-choices{grid-template-columns:1fr;gap:9px}.studio button.orbit-choice{flex-direction:row;align-items:center;min-height:98px;gap:20px}.orbit-choice-icon{width:84px}.orbit-picker{padding-bottom:18px;margin-bottom:18px}}
 @media(prefers-reduced-motion:reduce){.studio button.orbit-choice,.orbit-choice-check{transition:none}.studio button.orbit-choice:hover{transform:none}}
+
+.studio .fal-key-connected{align-items:flex-start;flex-wrap:wrap;gap:20px}
+.fal-balance{min-width:0;flex:1 1 220px}
+.studio .fal-balance-row{display:flex;align-items:baseline;flex-wrap:wrap;gap:12px;margin:0 0 7px;color:var(--text2);font-size:13px}
+.fal-balance-row strong{color:var(--text);font-size:24px;font-weight:500;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
+.studio .fal-balance #fal-balance-detail{font-size:11px;line-height:1.6;margin:0 0 8px;color:var(--muted);max-width:360px}
+.fal-balance>a{font-size:11px;color:var(--text2);text-underline-offset:3px}
+.fal-key-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+@media(max-width:600px){.studio .fal-key-connected{flex-direction:column}.fal-balance{flex-basis:auto}.fal-balance-row strong{font-size:22px}}
