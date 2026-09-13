@@ -52,9 +52,6 @@ class FalCredentialTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.queue = Queue()
-        self.balance_queue = Queue()
-        self.balance_read = Mock(side_effect=lambda key: {
-            "status": "ready", "amount": 101.25 if key == KEY_A else 22.5, "currency": "USD"})
         self.logs = io.StringIO()
         environment = {"FAL_KEY": OWNER_KEY}
         if self.hosted:
@@ -63,11 +60,6 @@ class FalCredentialTests(unittest.TestCase):
                         patch.object(server, "DATA", self.root), patch.object(server, "JOBS", {}),
                         patch.object(fal_camera, "ROOT", self.root),
                         patch.object(fal_credentials, "STORE", {}),
-                        patch.object(fal_credentials, "BALANCES", {}),
-                        patch.object(fal_credentials, "BALANCE_INFLIGHT", {}),
-                        patch.object(fal_credentials, "_read_balance", self.balance_read),
-                        patch.object(fal_credentials, "_schedule_balance", side_effect=lambda token, credential, tag:
-                            self.balance_queue.submit(lambda: fal_credentials._balance_worker(token, credential, tag))),
                         patch.object(fal_credentials, "verify_key", return_value=True),
                         patch.object(fal_credentials.threading, "Timer"),
                         patch.object(fal_camera, "_json_request", side_effect=AssertionError("No provider request")),
@@ -141,11 +133,6 @@ class FalCredentialTests(unittest.TestCase):
         self.assertEqual(status, 200, raw.decode())
         return json.loads(raw)["configured"]
 
-    def account(self, cookie=""):
-        status, _, raw = self.request(cookie=cookie)
-        self.assertEqual(status, 200, raw.decode())
-        return json.loads(raw)
-
     def generate(self, cookie=""):
         return self.request("/api/generate", method="POST", cookie=cookie,
                             data={"video_id": VIDEO, "mode": "fal-h3-max", "item_id": "moment"})
@@ -184,76 +171,6 @@ class FalCredentialTests(unittest.TestCase):
         self.assertFalse(json.loads(raw)["configured"])
         self.assertFalse(self.configured(cookie_a))
         self.assertTrue(self.configured(cookie_b))
-        self.assert_no_saved_secrets()
-
-    def test_balance_projection_is_isolated_between_browser_connections(self):
-        cookie_a, cookie_b = self.connect(KEY_A), self.connect(KEY_B)
-        self.assertEqual(self.account(cookie_a)["balance"]["status"], "loading")
-        self.assertEqual(self.account(cookie_b)["balance"]["status"], "loading")
-        self.assertEqual(len(self.balance_queue.pending), 2)
-        self.balance_queue.run_next()
-        self.assertEqual(self.account(cookie_a)["balance"]["amount"], 101.25)
-        self.assertEqual(self.account(cookie_b)["balance"]["status"], "loading")
-        self.balance_queue.run_next()
-        self.assertEqual(self.account(cookie_b)["balance"]["amount"], 22.5)
-        status, _, raw = self.request("/api/state", cookie=cookie_a)
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(raw)["fal_credentials"]["balance"]["amount"], 101.25)
-        self.assertFalse(self.account()["configured"])
-        self.assertIsNone(self.account().get("balance", {}).get("amount"))
-        self.assertEqual([call.args[0] for call in self.balance_read.call_args_list], [KEY_A, KEY_B])
-        self.assert_no_saved_secrets()
-
-    def test_pending_and_forbidden_balance_do_not_block_generation(self):
-        cookie = self.connect()
-        for _ in range(3):
-            self.assertEqual(self.account(cookie)["balance"]["status"], "loading")
-        self.assertEqual(len(self.balance_queue.pending), 1)
-        status, _, raw = self.generate(cookie)
-        self.assertEqual(status, 200, raw.decode())
-        self.assertEqual(len(self.queue.pending), 1)
-        self.balance_read.side_effect = None
-        self.balance_read.return_value = {"status": "forbidden"}
-        self.balance_queue.run_next()
-        self.assertEqual(self.account(cookie)["balance"]["status"], "forbidden")
-        status, _, raw = self.request("/api/generation/check", method="POST", cookie=cookie)
-        self.assertEqual(status, 200)
-        self.assertTrue(json.loads(raw)["ready"])
-        self.assert_no_saved_secrets()
-
-    def test_disconnect_hides_balance_even_when_the_old_read_finishes_late(self):
-        cookie = self.connect()
-        self.assertEqual(len(self.balance_queue.pending), 1)
-        self.request("/api/credentials/fal/clear", method="POST", cookie=cookie)
-        self.balance_queue.run_next()
-        account = self.account(cookie)
-        self.assertFalse(account["configured"])
-        self.assertIsNone(account.get("balance", {}).get("amount"))
-        status, _, raw = self.request("/api/state", cookie=cookie)
-        self.assertEqual(status, 200)
-        self.assertIsNone(json.loads(raw)["fal_credentials"].get("balance", {}).get("amount"))
-        self.assert_no_saved_secrets()
-
-    def test_replaced_key_never_receives_the_previous_connections_late_balance(self):
-        cookie_a = self.connect(KEY_A)
-        cookie_b = self.connect(KEY_B, cookie_a)
-        self.assertEqual(len(self.balance_queue.pending), 2)
-        self.balance_queue.run_next()
-        self.assertFalse(self.account(cookie_a)["configured"])
-        self.assertEqual(self.account(cookie_b)["balance"]["status"], "loading")
-        self.assertNotIn("amount", self.account(cookie_b)["balance"])
-        self.balance_queue.run_next()
-        self.assertEqual(self.account(cookie_b)["balance"]["amount"], 22.5)
-        self.assert_no_saved_secrets()
-
-    def test_expired_connection_cannot_publish_a_late_balance(self):
-        cookie = self.connect()
-        credential = fal_credentials.get(cookie)
-        with patch.object(fal_credentials.time, "time", return_value=credential.expires_at + 1):
-            self.assertFalse(self.account(cookie)["configured"])
-            self.balance_queue.run_next()
-            self.assertIsNone(self.account(cookie).get("balance", {}).get("amount"))
-        self.assertFalse(self.account(cookie)["configured"])
         self.assert_no_saved_secrets()
 
     def test_cookie_is_opaque_http_only_strict_and_secure_for_https(self):
@@ -452,11 +369,6 @@ class CredentialBoundaryTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.frame = self.root / "frame.png"
         Image.new("RGB", (160, 90), "blue").save(self.frame)
-        for replacement in (patch.object(fal_credentials, "BALANCES", {}),
-                            patch.object(fal_credentials, "BALANCE_INFLIGHT", {}),
-                            patch.object(fal_credentials, "_schedule_balance")):
-            replacement.start()
-            self.addCleanup(replacement.stop)
 
     def test_credential_snapshot_is_immutable_and_repr_omits_key(self):
         with patch.object(fal_credentials, "STORE", {}), \

@@ -300,35 +300,7 @@ function localJobPollInterval({ readCount, consecutiveReadErrors }) {
   return [250, 250, 500, 500, 1000, 1500, 2000][readCount - 1] ?? 3000;
 }
 async function safely(operation) { try { await operation(); } catch (error) { status(error.message); } }
-function renderFalBalance() {
-  const balance = state.fal_credentials?.configured ? state.fal_credentials.balance : null;
-  const value = $("fal-balance-value"), detail = $("fal-balance-detail");
-  let valueText = "", detailText = "";
-  if (state.fal_credentials?.configured) {
-    if (balance?.status === "ready" && Number.isFinite(balance.amount) && /^[A-Z]{3}$/.test(balance.currency)) {
-      valueText = new Intl.NumberFormat(undefined, { style: "currency", currency: balance.currency,
-        minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance.amount);
-      const checked = Number.isFinite(balance.checked_at) ? new Date(balance.checked_at * 1000) : null;
-      detailText = checked && Number.isFinite(checked.getTime())
-        ? `Updated ${checked.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Refreshes automatically.`
-        : "Your account's available credit. Refreshes automatically.";
-    } else if (balance?.status === "forbidden") {
-      valueText = "Not available";
-      detailText = "Fal requires an Admin API key to show the balance. You can check it in Fal instead.";
-    } else if (!balance || balance.status === "loading") {
-      valueText = "Checking…";
-      detailText = "Reading your balance. You can keep using the app.";
-    } else {
-      valueText = "Not available";
-      detailText = "Fal could not return a balance. We’ll check again automatically; you can keep using the app.";
-    }
-  }
-  // Avoid re-announcing an unchanged balance on every workspace poll.
-  if (value.textContent !== valueText) value.textContent = valueText;
-  if (detail.textContent !== detailText) detail.textContent = detailText;
-}
 function renderFalCredentials() {
-  renderFalBalance();
   const configured = state.fal_credentials?.configured === true;
   const editing = !configured || falKeyEditing;
   $("fal-account").dataset.connected = String(configured);

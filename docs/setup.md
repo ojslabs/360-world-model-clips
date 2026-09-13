@@ -34,13 +34,7 @@ server restart clears all such connections. The app does not put the key into
 local storage, runtime files or output receipts. Browser requests never fall
 back to a server owner's `FAL_KEY`.
 
-The account panel also requests the credit balance with the connected key. Fal's
-billing endpoint requires an admin key; an inference key may lack permission to
-read it. Loading, denied access or a failed balance read does not block generation.
-The request runs in the background, with one check in flight per connection and
-a 60-second memory cache. Disconnecting, replacing the key, signing out or letting
-the connection expire removes its balance. Late responses cannot restore it.
-No billing response is saved to disk or fetched using the host owner's key.
+**View Fal usage** opens your [Fal usage dashboard](https://fal.ai/dashboard/usage-billing).
 
 Disconnecting prevents new requests through that connection. Work already
 submitted continues with the credential captured when it started. If a restart

@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 import hashlib
 from http.cookies import SimpleCookie, CookieError
 import json
-import math
 import re
 import secrets
 import threading
@@ -18,11 +17,6 @@ TTL_SECONDS = 8 * 60 * 60
 MAX_CREDENTIALS = 256
 LOCK = threading.RLock()
 STORE = {}
-BALANCE_TTL_SECONDS = 60
-BALANCE_TIMEOUT_SECONDS = 8
-BALANCE_MAX_BYTES = 65536
-BALANCES = {}
-BALANCE_INFLIGHT = {}
 
 
 class CredentialError(ValueError):
@@ -81,77 +75,18 @@ def _token(cookie):
         return None
 
 
-def _drop(token):
-    STORE.pop(token, None)
-    BALANCES.pop(token, None)
-    BALANCE_INFLIGHT.pop(token, None)
-
-
-def _read_balance(key):
-    """Read billing credits only. Restricted keys can still generate media.
-
-    https://fal.ai/docs/platform-apis/v1/account/billing
-    """
-    request = Request("https://api.fal.ai/v1/account/billing?expand=credits",
-                      headers={"Authorization": "Key " + key, "Accept": "application/json"})
-    try:
-        with build_opener(NoRedirect()).open(request, timeout=BALANCE_TIMEOUT_SECONDS) as response:
-            raw = response.read(BALANCE_MAX_BYTES + 1)
-        if len(raw) > BALANCE_MAX_BYTES:
-            return {"status": "unavailable"}
-        value = json.loads(raw)
-        credits = value.get("credits") if isinstance(value, dict) else None
-        amount = credits.get("current_balance") if isinstance(credits, dict) else None
-        currency = credits.get("currency") if isinstance(credits, dict) else None
-        if (isinstance(amount, bool) or not isinstance(amount, (int, float)) or not math.isfinite(amount)
-                or not isinstance(currency, str) or not re.fullmatch(r"[A-Za-z]{3}", currency)):
-            return {"status": "unavailable"}
-        return {"status": "ready", "amount": amount, "currency": currency.upper()}
-    except HTTPError as error:
-        return {"status": "forbidden" if error.code == 403 else "unavailable"}
-    except (URLError, TimeoutError, OSError, ValueError, UnicodeError, OverflowError):
-        return {"status": "unavailable"}
-
-
-def _balance_worker(token, credential, request_tag):
-    with LOCK:
-        _purge()
-        if STORE.get(token) is not credential or BALANCE_INFLIGHT.get(token) is not request_tag:
-            return
-    try:
-        result = _read_balance(credential.key)
-    except Exception:
-        # Neither provider text nor unexpected exception messages enter state.
-        result = {"status": "unavailable"}
-    with LOCK:
-        _purge()
-        if STORE.get(token) is credential and BALANCE_INFLIGHT.get(token) is request_tag:
-            BALANCES[token] = {**result, "checked_at": time.time()}
-            BALANCE_INFLIGHT.pop(token, None)
-
-
-def _schedule_balance(token, credential, request_tag):
-    worker = threading.Thread(target=_balance_worker, args=(token, credential, request_tag), daemon=True,
-                              name="fal-balance")
-    worker.start()
-
-
 def _purge():
-    for token in BALANCES.keys() | BALANCE_INFLIGHT.keys():
-        if token not in STORE:
-            BALANCES.pop(token, None)
-            BALANCE_INFLIGHT.pop(token, None)
     now = time.time()
     for token, credential in list(STORE.items()):
         if credential.expires_at <= now:
-            _drop(token)
+            STORE.pop(token, None)
 
 
 def _expire(token, fingerprint):
     with LOCK:
         credential = STORE.get(token)
         if credential and credential.fingerprint == fingerprint:
-            _drop(token)
+            STORE.pop(token, None)
 
 
 def set_key(cookie, key):
@@ -165,7 +100,7 @@ def set_key(cookie, key):
         previous = _token(cookie)
         if len(STORE) >= MAX_CREDENTIALS and previous not in STORE:
             raise CredentialError("This server has too many active key sessions. Try again later.")
-        _drop(previous)
+        STORE.pop(previous, None)
         STORE[token] = credential
     expiry = threading.Timer(TTL_SECONDS, _expire, args=(token, credential.fingerprint))
     expiry.daemon = True
@@ -188,39 +123,15 @@ def require(cookie):
 
 def clear(cookie):
     with LOCK:
-        _drop(_token(cookie))
+        STORE.pop(_token(cookie), None)
 
 
 def status(cookie):
-    schedule = None
-    with LOCK:
-        _purge()
-        token = _token(cookie)
-        credential = STORE.get(token)
-        if credential is None:
-            return {"configured": False, "verified": False}
-        balance = BALANCES.get(token)
-        if (token not in BALANCE_INFLIGHT and
-                (balance is None or time.time() - balance.get("checked_at", 0) >= BALANCE_TTL_SECONDS)):
-            request_tag = object()
-            BALANCE_INFLIGHT[token] = request_tag
-            BALANCES[token] = {"status": "loading"}
-            balance = BALANCES[token]
-            schedule = (token, credential, request_tag)
-        result = {"configured": True, "expires_at": credential.expires_at, "verified": credential.verified,
-                  "message": "Key verified without generating media." if credential.verified else
-                             "Key connected; generation access is checked on the first request.",
-                  "balance": dict(balance or {"status": "loading"})}
-    if schedule:
-        try:
-            _schedule_balance(*schedule)
-        except Exception:
-            with LOCK:
-                if STORE.get(token) is credential and BALANCE_INFLIGHT.get(token) is schedule[2]:
-                    BALANCES[token] = {"status": "unavailable", "checked_at": time.time()}
-                    BALANCE_INFLIGHT.pop(token, None)
-                    result["balance"] = dict(BALANCES[token])
-    return result
+    credential = get(cookie)
+    return ({"configured": True, "expires_at": credential.expires_at, "verified": credential.verified,
+             "message": "Key verified without generating media." if credential.verified else
+                        "Key connected; generation access is checked on the first request."}
+            if credential else {"configured": False, "verified": False})
 
 
 def cookie_header(token="", *, secure=False, clear=False):
