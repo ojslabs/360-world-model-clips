@@ -124,15 +124,21 @@ equality does not prove that the generated subject stayed frozen or that its
 camera motion was physically accurate. Review each result, including the cuts
 back into the source.
 
-![Four views from the saved F1 orbit](assets/f1-sequence.jpg)
+![Saved source frame and the generated low-angle view from an Over and under example](assets/world-model-preview.png)
 
-These views show the reference and 1.5, 3 and 4.5 seconds into an earlier Around
-orbit. The [README GIF](../README.md) contains six seconds from that saved
-18-second F1 edit and is reduced to 640 × 360. Generation requested 1080P.
-Existing documentation media retains its original timing and audio; it does
-not demonstrate a new Over & under or Diagonal result.
+This **Over & under** example starts from the source frame at **584.24 seconds
+(9:44.24)**. The generated still is 3.25 seconds into the native response. It shows
+a low-angle view of the bicycle against the sky, a viewpoint absent from the
+reference. The native video has 158 frames at 1920 × 1080 and 24 fps, lasting
+6.583333 seconds. [Watch the side-by-side motion](assets/f1-over-under.gif).
 
-Source: Red Bull's [Jumping Over A Moving F1 Car (world first)](https://www.youtube.com/watch?v=8o40mSS05iE&t=586).
+The corresponding saved edit lasts 18 seconds: 8 seconds of source, 6 seconds
+of retimed generation and 4 seconds of source continuation. It retains that
+historical timing. The current four-second lead and up-to-ten-second tail apply
+to new edits. This example does not verify every requested path or guarantee
+that the subject remains frozen during generation.
+
+Source: Red Bull's [Jumping Over A Moving F1 Car (world first)](https://www.youtube.com/watch?v=8o40mSS05iE&t=584).
 [Example details and attribution](assets/README.md).
 
 ## Accounts and optional remixes

@@ -3,14 +3,24 @@
 Turn a moment from a video into a camera orbit, then return to the original action.
 Choose a frame, choose a path and download the finished edit.
 
+![Saved side-on source frame beside a generated low-angle view of the bicycle against the sky](docs/assets/world-model-preview.png)
+
+One saved frame, then a generated view from below. This **Over & under** example
+uses 1080P generation. [Source and attribution](docs/assets/README.md).
+
+<details>
+<summary>Watch the generated movement (6.58 seconds)</summary>
+
+![The saved source frame beside the complete native Over and under generation](docs/assets/f1-over-under.gif)
+
+The left image stays on the source frame. The right shows the returned generation,
+including its changes to the subject and scene.
+
+</details>
+
 **[Quick start](#quick-start)** · [How it works](docs/how-it-works.md) ·
 [Setup](docs/setup.md) · [Download source ZIP](https://github.com/ojslabs/360-world-model-clips/archive/refs/heads/main.zip) ·
 [MIT license](LICENSE)
-
-![A generated camera orbit around a bicycle rider above an F1 car](docs/assets/f1-orbit.gif)
-
-An Around example from a saved F1 edit. Preview: 640 × 360; generation: 1080P.
-[Source and attribution](docs/assets/README.md).
 
 ## Quick start
 
@@ -38,23 +48,11 @@ Disconnect, expiry or a restart clears the connection.
 
 ## Make an edit
 
-### 1. Pick a video
+![Three steps in the running editor: preview a video, save its frame, then review and download the generated edit](docs/assets/make-an-edit.png)
 
-Search or paste a YouTube link, preview the video, then import it.
-
-![The selected F1 video open in the preview dialog](docs/assets/pick-video.jpg)
-
-### 2. Save the frame
-
-Scrub to your moment, step forwards or backwards and click **Use this frame**.
-
-![The populated F1 source player with frame selection controls](docs/assets/pick-frame.jpg)
-
-### 3. Generate and download
-
-Choose a path, generate the edit, then review and download it in Outputs.
-
-![A completed F1 edit in Outputs with its download control](docs/assets/review-edit.jpg)
+1. Search or paste a YouTube link, preview it, then click **Use this video**.
+2. Scrub to your moment, step forwards or backwards, then click **Use this frame**.
+3. Choose a path, generate, then review and **Download** the result.
 
 The output shown is an earlier 18-second F1 edit. New edits use:
 
